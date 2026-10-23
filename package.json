@@ -1,0 +1,19 @@
+{
+  "name": "documaster",
+  "version": "2.4.0",
+  "description": "SLAI Documaster - word counter, converter, merger and page organiser, PDF editor, reader and analysis, and assistant. TypeScript client + Python SLAI service.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node tools/build-static.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "test:py": "python3 -m unittest discover -s tests_py -v",
+    "start": "npm run build && python3 -m slai"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "recorded": "2026-10-22",
+  "how": "tools/probe_agents.py <role> run against a COPY of the SLAI checkout (never the live repository), through SLAI's own AgentFactory.",
+  "machines": {
+    "device": "the person's computer (Linux VM of the desktop app): Python 3.10, no torch, no joblib",
+    "cloud": "development container: Python 3.13, SLAI checkout mirror; the agents were not probed there"
+  },
+  "roles": {
+    "reader":        {"loaded": true,  "class": "ReaderAgent",        "result": "capabilities() answered (modes: capabilities, compress, convert, decompress, describe, detect, jobs, merge, parse, pipeline, read, recover, resume, salvage, validate, ...)", "note": "Documaster calls the Reader ENGINES (parser, detector, integrity, compression) directly, not the ReaderAgent."},
+    "privacy":       {"loaded": true,  "class": "PrivacyAgent",       "result": "register_consent and bind_purpose accepted; evaluate_privacy answered decision 'modify' for text containing an email address, phone number and IBAN, with a sanitised payload in which the whole content is replaced by a token; without a registered consent it raises ConsentArtifactMissingError (PRV-3007).", "note": "Documaster therefore registers the person's consent first, and treats 'modify' as: do not forward the text."},
+    "handler":       {"loaded": true,  "class": "HandlerAgent",       "result": "failure_normalization answered schema handler.failure.v2 with type, category, severity, retryable, policy_action.", "note": "Only used when telemetry is switched on (off by default)."},
+    "observability": {"loaded": true,  "class": "ObservabilityAgent", "result": "perform_task accepted a latency/event record and returned a trace (status 'degraded', incident_level 'critical' for a single 120 ms sample: Documaster does not interpret this).", "note": "Only used when telemetry is switched on (off by default)."},
+    "language":      {"loaded": false, "class": "LanguageAgent",      "result": "Could not be loaded: ModuleNotFoundError: No module named 'torch'.", "note": "Documaster's use of it (classify_text, rerank_texts, summarize_text) is written against the agent's methods but has NOT been run against the real agent."},
+    "safety":        {"loaded": false, "class": "SafetyAgent",        "result": "Could not be loaded: ModuleNotFoundError: No module named 'torch'.", "note": "Documaster's use of it (perform_task on document text) has NOT been run against the real agent."},
+    "quality":       {"loaded": false, "class": "QualityAgent",       "result": "Could not be initialised: SQLite Quality Memory missing (quality_memory.sqlite3); its migration script was not in the checkout copy.", "note": "Not exercised."},
+    "planning":      {"loaded": false, "class": "PlanningAgent",      "result": "Could not be loaded: ModuleNotFoundError: No module named 'joblib'.", "note": "Not used by design: Documaster's steps have fixed dependencies, so there is nothing to plan."}
+  }
+}

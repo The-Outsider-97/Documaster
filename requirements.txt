@@ -1,0 +1,16 @@
+# Python packages used by Documaster's service (the server itself is standard library only).
+# Install into the SLAI environment:  python -m pip install -r requirements.txt
+pypdf>=5.9           # reading, editing, encrypting PDFs
+pypdfium2>=5          # rendering pages (viewer, thumbnails, redaction rasterising)
+reportlab>=4          # writing PDFs, stamps, redaction output
+python-docx>=1.1      # reading and writing Word files
+Pillow>=10            # images
+cryptography>=42      # AES-256 for PDF passwords and encrypted SLDC (pypdf needs it)
+
+# Tested with: pypdf 5.9, pypdfium2 5.13, reportlab 5.0, python-docx 1.2, Pillow 12.3, cryptography 50 (Python 3.13).
+#
+# Optional programs (found on PATH or in the usual install folders; Documaster says what is missing):
+#   LibreOffice (soffice)  layout-preserving Office conversion, RTF / DOC reading
+#   Tesseract OCR          OCR for scanned PDFs (add language data for the languages you need)
+#   qpdf                   extra PDF checking
+# Optional tools for development only:  Node.js 20+ with `npm i` (TypeScript, tsx); Playwright for tests_e2e.
