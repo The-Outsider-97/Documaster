@@ -18,6 +18,7 @@ The merge is built on the format's own rules (nothing here defines a competing s
 from __future__ import annotations
 
 import copy
+import hashlib
 import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable
@@ -109,6 +110,68 @@ def _label(chunk: list[dict[str, Any]]) -> str:
 def _clip(text: str, n: int = 70) -> str:
     text = re.sub(r"\s+", " ", text).strip()
     return text if len(text) <= n else text[:n - 1] + "…"
+
+
+_TOC = "slai.sldc.toc"
+
+
+def _reconcile_tocs(blocks: list[tuple[int, dict[str, str], dict[str, Any]]],
+                    first_map: dict[tuple[int, str], str], warnings: list[str], dropped: dict[str, int]) -> None:
+    """Give every imported managed TOC its own identity and repair heading links.
+
+    The same source can be inserted twice, and unrelated sources commonly have
+    identical managed-TOC IDs.  A page plan may also omit a TOC title or a
+    referenced heading.  Keep the visible text in those partial cases, but
+    remove *only* its now-invalid managed annotation and disclose the loss.
+    """
+    titles: dict[tuple[int, str], list[tuple[int, str]]] = {}
+
+    def target(unit: int, local_ids: dict[str, str], old: str) -> str | None:
+        return local_ids.get(old) or first_map.get((unit, old))
+
+    for position, (unit, local_ids, block) in enumerate(blocks):
+        toc = block.get("extensions", {}).get(_TOC)
+        if not toc or toc.get("role") != "title":
+            continue
+        original = toc["id"]
+        # Stable within this merge, valid SLDC 24-character hexadecimal ID.
+        identity = hashlib.sha256(f"documaster.toc:{unit}:{original}:{position}".encode()).hexdigest()[:24]
+        titles.setdefault((unit, original), []).append((position, identity))
+        toc["id"] = identity
+        if "overrides" in toc:
+            overrides = {}
+            for heading, props in toc["overrides"].items():
+                mapped = target(unit, local_ids, heading)
+                if mapped is not None:
+                    overrides[mapped] = props
+            if len(overrides) != len(toc["overrides"]):
+                count = len(toc["overrides"]) - len(overrides)
+                dropped["TOC overrides for omitted headings"] = dropped.get("TOC overrides for omitted headings", 0) + count
+            toc["overrides"] = overrides
+
+    demoted = 0
+    for position, (unit, local_ids, block) in enumerate(blocks):
+        ext = block.get("extensions", {})
+        toc = ext.get(_TOC)
+        if not toc or toc.get("role") != "entry":
+            continue
+        group = titles.get((unit, toc["id"]))
+        heading = target(unit, local_ids, toc["heading"])
+        if group and heading:
+            # Repeated source-page selections may duplicate a TOC. Prefer the
+            # nearest preceding imported title, otherwise the nearest later.
+            candidates = [item for item in group if item[0] <= position]
+            toc["id"] = (candidates[-1] if candidates else group[0])[1]
+            toc["heading"] = heading
+        else:
+            ext.pop(_TOC, None)
+            if not ext:
+                block.pop("extensions", None)
+            demoted += 1
+    if demoted:
+        dropped["managed TOC entries without their title or heading"] = demoted
+        warnings.append(f"{demoted} TOC entry/entries could not retain live links because their source title or heading "
+                        "was omitted; visible text was preserved as ordinary content")
 
 
 class _Ids:
@@ -343,6 +406,11 @@ def merge_units(units: list[MergeUnit], plan: list[dict[str, Any]] | None = None
         elif not inst.natural and not (any_sections and first.get("section")):
             first.setdefault("attributes", {})["page_break_before"] = True
         out_blocks.extend(inst.blocks)
+
+    _reconcile_tocs(
+        [(inst.unit, inst.idmap, block) for inst in insts for block in inst.blocks],
+        first_map, warnings, dropped,
+    )
 
     # ---- styles used by header/footer styles are already requested above; assemble the document
     first_unit = units[insts[0].unit]
