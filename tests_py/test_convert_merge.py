@@ -65,6 +65,16 @@ class ConvertTests(unittest.TestCase):
             xml = z.read("word/document.xml").decode()
         self.assertIn("unique-token-42", xml)
 
+    def test_pdf_export_handles_tabs_in_native_sldc_text(self):
+        from slai.bridge import sldc
+        s = sldc()
+        native = s.new_package("Tabbed text", [s.make_block("paragraph", "First\tsecond\tthird", block_id="tab-1")])
+        doc = self.h.upload("tabs.sldc", s.dumps_package(native))
+        rep = self.convert(doc, "pdf")
+        text = "\n".join(p.extract_text() or "" for p in PdfReader(io.BytesIO(self.h.download(rep["output"]))).pages)
+        for word in ("First", "second", "third"):
+            self.assertIn(word, text)
+
     def test_report_lists_what_was_not_carried_over(self):
         rep = self.convert(self.pdf, "txt")
         self.assertIsInstance(rep["lost"], list)
@@ -180,6 +190,70 @@ class MergeTests(unittest.TestCase):
         with self.assertRaises(ApiError) as e:
             self.merge({"docs": [self.a["id"]], "target": "pdf", "plan": [{"doc": 0, "page": 0, "included": False}]})
         self.assertEqual(e.exception.status, 400)
+
+    def test_merge_managed_tocs_rekeys_groups_and_heading_links(self):
+        from slai.bridge import sldc
+        s = sldc()
+
+        def sample(name, heading):
+            toc_id = "a" * 24  # Independent documents can have colliding TOC IDs.
+            blocks = [
+                s.make_block("paragraph", "Contents", block_id="toc-title", extensions={
+                    "slai.sldc.toc": {"id": toc_id, "role": "title", "depth": 2,
+                                      "overrides": {"head": {"label": f"Custom {name}"}}}}),
+                s.make_block("paragraph", heading, block_id="toc-entry", extensions={
+                    "slai.sldc.toc": {"id": toc_id, "role": "entry", "heading": "head", "level": 1}}),
+                s.make_block("heading", heading, block_id="head", attributes={"level": 1}),
+            ]
+            package = s.new_package(name, blocks)
+            package.version = "1.1.0"
+            return s.dumps_package(package)
+
+        a = self.h.upload("toc-a.sldc", sample("First", "Alpha Heading"))
+        b = self.h.upload("toc-b.sldc", sample("Second", "Beta Heading"))
+        merged = self.merge({"docs": [a["id"], b["id"]], "target": "sldc"})
+        self.assertTrue(merged["verification"]["ok"])
+        package = s.loads_package(self.h.download(merged["output"]))
+        s.validate_package(package)
+        back = package.document
+        titles = [block["extensions"]["slai.sldc.toc"] for block in back["blocks"]
+                  if block.get("extensions", {}).get("slai.sldc.toc", {}).get("role") == "title"]
+        entries = [block["extensions"]["slai.sldc.toc"] for block in back["blocks"]
+                   if block.get("extensions", {}).get("slai.sldc.toc", {}).get("role") == "entry"]
+        self.assertEqual((len(titles), len(entries)), (2, 2))
+        self.assertEqual(len({item["id"] for item in titles}), 2)
+        self.assertEqual({item["id"] for item in entries}, {item["id"] for item in titles})
+        headings = {block["id"] for block in back["blocks"] if block["type"] == "heading"}
+        self.assertEqual({item["heading"] for item in entries}, headings)
+        self.assertTrue(all(set(item["overrides"]).issubset(headings) for item in titles))
+        pdf = self.merge({"docs": [a["id"], b["id"]], "target": "pdf"})
+        self.assertTrue(pdf["verification"]["ok"])
+        pdf_text = "\n".join(self.text(pdf["output"]))
+        self.assertIn("Alpha Heading", pdf_text)
+        self.assertIn("Beta Heading", pdf_text)
+
+    def test_merge_omitted_toc_title_keeps_text_and_discloses_lost_links(self):
+        from slai.bridge import sldc
+        s = sldc()
+        toc_id = "b" * 24
+        package = s.new_package("Partial table", [
+            s.make_block("paragraph", "Table of Contents", block_id="title", extensions={
+                "slai.sldc.toc": {"id": toc_id, "role": "title", "depth": 1}}),
+            s.make_block("paragraph", "Visible entry", block_id="entry",
+                         attributes={"page_break_before": True}, extensions={
+                             "slai.sldc.toc": {"id": toc_id, "role": "entry", "heading": "heading", "level": 1}}),
+            s.make_block("heading", "Real heading", block_id="heading", attributes={"level": 1}),
+        ])
+        package.version = "1.1.0"
+        src = self.h.upload("partial-toc.sldc", s.dumps_package(package))
+        merged = self.merge({"docs": [src["id"]], "target": "sldc",
+                             "plan": [{"doc": 0, "page": 1, "included": True}]})
+        self.assertTrue(merged["verification"]["ok"])
+        back = s.loads_package(self.h.download(merged["output"]))
+        s.validate_package(back)
+        self.assertIn("Visible entry", [b["text"] for b in back.document["blocks"]])
+        self.assertFalse(any("slai.sldc.toc" in b.get("extensions", {}) for b in back.document["blocks"]))
+        self.assertTrue(any("TOC" in warning for warning in merged["warnings"]))
 
     def test_a_plan_pointing_outside_the_documents_is_refused(self):
         for item in ({"doc": 7, "page": 0, "included": True}, {"doc": 0, "page": 99, "included": True}, {"doc": 0, "page": -1, "included": True}):
