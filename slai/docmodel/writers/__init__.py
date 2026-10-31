@@ -17,6 +17,9 @@ class WriteResult:
     kept: list[str] = field(default_factory=list)
     lost: list[str] = field(default_factory=list)
     pages: int | None = None
+    # Optional measured layout from the same renderer that produced the file.
+    # Block IDs are stable native document references; no geometry is guessed.
+    layout: dict[str, Any] | None = None
 
 
 @dataclass

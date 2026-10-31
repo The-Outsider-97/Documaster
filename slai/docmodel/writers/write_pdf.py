@@ -166,6 +166,15 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
     ALIGN = {"left": TA_LEFT, "center": TA_CENTER, "right": TA_RIGHT, "justify": TA_JUSTIFY}
     xref_ids = {s["target"] for b in doc["blocks"] for s in b.get("spans", []) if s["type"] == "xref"}
     block_ids = {b["id"] for b in doc["blocks"]}
+    measured_pages: dict[str, int] = {}
+    printed_labels: list[str | None] = []
+    template_ids: list[str] = []
+    # A TOC's page labels are drawn in the PDF pass itself. The first pass
+    # measures heading positions; later passes converge if the TOC reflows.
+    reference_labels: dict[str, str] = {}
+    toc_titles = {meta["id"]: meta for block in doc["blocks"]
+                  if (meta := block.get("extensions", {}).get("slai.sldc.toc"))
+                  and meta.get("role") == "title" and isinstance(meta.get("id"), str)}
 
     # ---------------------------------------------------------------- inline markup
     def markup_text(text: str, mono: bool) -> str:
@@ -219,8 +228,8 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
             if props.get("href"):
                 url = props["href"].replace("&", "&amp;").replace('"', "&quot;")
                 xml = f'<a href="{url}" color="#0563C1">{xml}</a>'
-            if props.get("xref") in block_ids:
-                xml = f'<a href="#{props["xref"]}" color="#0563C1">{xml}</a>'
+            if props.get("target") in block_ids:
+                xml = f'<a href="#{props["target"]}" color="#0563C1">{xml}</a>'
             if props.get("ref"):
                 kind, number = notes.use(props["ref"])
                 if number:
@@ -230,8 +239,9 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
         return "".join(parts)
 
     def style_for(block: dict[str, Any], default: ParagraphStyle) -> tuple[ParagraphStyle, dict[str, Any]]:
-        props = styles_para.get(block.get("style", ""), {})
-        align = (block.get("attributes") or {}).get("align") or props.get("align")
+        # Direct paragraph formatting has precedence over inherited named styles.
+        props = {**styles_para.get(block.get("style", ""), {}), **(block.get("attributes") or {})}
+        align = props.get("align")
         kw: dict[str, Any] = {}
         if align:
             kw["alignment"] = ALIGN[align]
@@ -333,6 +343,19 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
         def draw(self) -> None:
             self.canv.bookmarkPage(self.key)
 
+    class TrackedParagraph(Paragraph):
+        """Keep the originating SLDC block ID even when ReportLab splits a paragraph."""
+
+        def __init__(self, xml: str, style: Any, block_id: str, **kwargs: Any) -> None:
+            super().__init__(xml, style, **kwargs)
+            self._sldc_block_id = block_id
+
+        def split(self, availWidth: float, availHeight: float) -> list[Any]:  # noqa: N802
+            pieces = super().split(availWidth, availHeight)
+            for piece in pieces:
+                piece._sldc_block_id = self._sldc_block_id
+            return pieces
+
     def start_block(block: dict[str, Any]) -> None:
         nonlocal current_section
         sid = block.get("section")
@@ -421,7 +444,7 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
                     depth = min(int((block.get("attributes") or {}).get("depth", 0)), 8)
                     style, flags = style_for(block, st_list)
                     style = ParagraphStyle("lix", parent=style, leftIndent=(depth + 1) * 7 * MM, bulletIndent=depth * 7 * MM + 1.5 * MM)
-                    emit(Paragraph(inline(block, flags), style, bulletText=label))
+                    emit(TrackedParagraph(inline(block, flags), style, block["id"], bulletText=label))
                 continue
             block = item
             start_block(block)
@@ -436,23 +459,70 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
                 level = min(lv - 1, state["outline_level"] + 1)
                 state["outline_level"] = level
                 story.append(Outline(block["text"].split("\n")[0] or "Heading", level, key))
-                emit(Paragraph(inline(block, flags), style))
+                emit(TrackedParagraph(inline(block, flags), style, block["id"]))
+            elif (block.get("extensions", {}).get("slai.sldc.toc") or {}).get("role") == "entry":
+                toc = block["extensions"]["slai.sldc.toc"]
+                level = max(1, min(6, int(toc.get("level", 1))))
+                title_info = toc_titles.get(toc["id"], {})
+                style, flags = style_for(block, st_body)
+                if block.get("style") is None and level == 1:
+                    flags["bold"] = True
+                heading_id = toc.get("heading", "")
+                number = reference_labels.get(heading_id, "") if title_info.get("show_page_numbers", True) else ""
+                if not number:
+                    emit(TrackedParagraph(inline(block, flags), style, block["id"]))
+                    continue
+                width = max(50.0, fw - style.leftIndent)
+                page_w = min(max(35.0, len(number) * base * 0.75 + 8), width * 0.15)
+                if title_info.get("leader_dots", True):
+                    try:
+                        estimated_label_w = pdfmetrics.stringWidth(clean(block["text"]), style.fontName, style.fontSize)
+                    except Exception:  # noqa: BLE001 - unsupported glyph; actual Paragraph still draws with fallback
+                        estimated_label_w = len(block["text"]) * style.fontSize * 0.5
+                    text_w = min(width * 0.76, max(width * 0.2, estimated_label_w + 12))
+                    dots_w = max(0.0, width - page_w - text_w)
+                else:
+                    dots_w = 0.0
+                    text_w = width - page_w
+                left = Paragraph(inline(block, flags), style)
+                right_style = ParagraphStyle("toc-number", parent=st_body, alignment=TA_RIGHT,
+                                             fontSize=style.fontSize, leading=style.leading, spaceAfter=0)
+                cells: list[Any] = [left]
+                widths = [text_w]
+                if dots_w:
+                    dot_width = pdfmetrics.stringWidth(".", body_font, max(7, style.fontSize * 0.8))
+                    dots = "." * min(120, max(2, int(dots_w / max(1, dot_width)) - 1))
+                    cells.append(Paragraph(dots, ParagraphStyle("toc-dots", parent=st_body, fontSize=max(7, style.fontSize * 0.8),
+                                                                 leading=style.leading, spaceAfter=0)))
+                    widths.append(dots_w)
+                cells.append(Paragraph(markup_text(number, False), right_style))
+                widths.append(page_w)
+                table = Table([cells], colWidths=widths, hAlign="LEFT")
+                table.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 0),
+                                           ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                                           ("TOPPADDING", (0, 0), (-1, -1), 0),
+                                           ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                                           ("VALIGN", (0, 0), (-1, -1), "BOTTOM")]))
+                table._sldc_block_id = block["id"]
+                emit(table)
             elif t == "quote":
                 style, flags = style_for(block, st_quote)
-                emit(Paragraph(inline(block, {"italic": True, **flags}), style))
+                emit(TrackedParagraph(inline(block, {"italic": True, **flags}), style, block["id"]))
             elif t == "code":
                 lines = clean(block["text"]).split("\n")
                 xml = "<br/>".join(re.sub(r"^( +)", lambda m: "&nbsp;" * len(m.group(1)), markup_text(line, True)) for line in lines)
-                emit(Paragraph(xml, st_code))
+                emit(TrackedParagraph(xml, st_code, block["id"]))
             elif t == "table":
                 if block["text"]:
-                    emit(Paragraph(f"<i>{markup_text(block['text'], False)}</i>", ParagraphStyle("tc", parent=st_caption, spaceAfter=3,
-                                                                                               keepWithNext=1)))
+                    emit(TrackedParagraph(f"<i>{markup_text(block['text'], False)}</i>", ParagraphStyle("tc", parent=st_caption, spaceAfter=3,
+                                                                                                        keepWithNext=1), block["id"]))
                 flow = table_flowable(block, fw)
                 if isinstance(flow, list):
                     for f in flow:
+                        f._sldc_block_id = block["id"]
                         emit(f)
                 else:
+                    flow._sldc_block_id = block["id"]
                     emit(flow)
                 emit(Spacer(1, base * 0.6))
             elif t == "figure":
@@ -470,10 +540,11 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
                     if target_h > max_h:
                         target_w, target_h = target_w * max_h / target_h, max_h
                     img = Image(io.BytesIO(got[0]), width=target_w, height=target_h)
+                    img._sldc_block_id = block["id"]
                     img.hAlign = {"left": "LEFT", "center": "CENTER", "right": "RIGHT"}[fig.get("align", "center")]
                     emit(img)
                     if block["text"]:
-                        emit(Paragraph(markup_text(block["text"], False), st_caption))
+                        emit(TrackedParagraph(markup_text(block["text"], False), st_caption, block["id"]))
                     else:
                         emit(Spacer(1, base * 0.5))
                 except Exception as exc:  # noqa: BLE001
@@ -484,7 +555,7 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
                         emit(Spacer(1, 1))     # keep an empty page (for example a scanned page without text)
                     continue
                 style, flags = style_for(block, st_body)
-                emit(Paragraph(inline(block, flags), style))
+                emit(TrackedParagraph(inline(block, flags), style, block["id"]))
         if opts.include_notes and (notes.note_numbers or notes.cited):
             story.append(Spacer(1, base))
             emit(Paragraph("<b>Notes</b>", st_head[3]))
@@ -507,41 +578,46 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
 
         def save(self) -> None:
             total = len(self._saved)
-            run_start: dict[str, int] = {}
-            previous = None
+            previous: str | None = None
+            printed = 0
+            printed_labels.clear()
+            template_ids.clear()
             for index, saved in enumerate(self._saved):
                 tid = saved.get("_dm_template", first_id)
-                if tid != previous:
-                    run_start[tid] = index
-                    previous = tid
+                section = section_info.get(tid, section_info[first_id])["section"] or {}
+                numbering = section.get("numbering") or {}
+                if tid != previous and numbering.get("start") is not None:
+                    printed = numbering["start"] - 1
+                previous = tid
+                template_ids.append(tid)
+                if section.get("role") == "cover" or numbering.get("show") is False or not opts.page_numbers:
+                    label = None
+                else:
+                    printed += 1
+                    label = format_number(printed, numbering.get("format", "decimal"))
+                printed_labels.append(label)
+            for index, saved in enumerate(self._saved):
+                tid = template_ids[index]
                 self.__dict__.update(saved)
                 info = section_info.get(tid, section_info[first_id])
-                self._draw_edges(info, index + 1, total, index - run_start.get(tid, 0))
+                self._draw_edges(info, index + 1, total, printed_labels[index])
                 super().showPage()
             super().save()
 
-        def _draw_edges(self, info: dict[str, Any], physical: int, total: int, offset: int) -> None:
+        def _draw_edges(self, info: dict[str, Any], physical: int, total: int, label: str | None) -> None:
             section = info["section"]
             s: PageSetup = info["setup"]
             pw, ph = info["page"]
-            number = physical
-            numbering = (section or {}).get("numbering") or {}
-            if numbering.get("start"):
-                number = numbering["start"] + offset
-            fmt = numbering.get("format", "decimal")
-            label = format_number(number, fmt)
             for edge in ("header", "footer"):
                 template = (section or {}).get(edge)
                 if template is None and edge == "footer" and opts.page_numbers and section is None:
                     template = {"center": "{page}"}
                 if not template:
                     continue
-                left, centre, right = resolve_header_footer(template, title, 0, total)
-                left, centre, right = (x.replace("0", label, 1) if False else x for x in (left, centre, right))
                 texts = []
                 for pos in ("left", "center", "right"):
                     raw = template.get(pos, "")
-                    raw = raw.replace("{{", "\x01").replace("}}", "\x02").replace("{page}", label).replace("{pages}", str(total)) \
+                    raw = raw.replace("{{", "\x01").replace("}}", "\x02").replace("{page}", label or "").replace("{pages}", str(total)) \
                         .replace("{title}", title).replace("\x01", "{").replace("\x02", "}")
                     texts.append(raw)
                 y = ph - (s.top * MM) / 2 - 3 if edge == "header" else (s.bottom * MM) / 2 - 3
@@ -570,21 +646,41 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
                                       author=clean("; ".join(authors))[:250], subject=clean((doc.get("publication") or {}).get("subtitle", ""))[:250],
                                       keywords=", ".join(keywords)[:250], creator="SLAI Documaster", producer="SLAI Documaster (reportlab)")
         lang = doc.get("language")
+        class LayoutDocTemplate(BaseDocTemplate):
+            def afterFlowable(self, flowable: Any) -> None:  # noqa: N802
+                block_id = getattr(flowable, "_sldc_block_id", None)
+                if block_id:
+                    measured_pages.setdefault(block_id, self.page)
+
         try:
-            document = BaseDocTemplate(buffer, lang=lang if lang and lang != "und" else None, **kwargs)
+            document = LayoutDocTemplate(buffer, lang=lang if lang and lang != "und" else None, **kwargs)
         except TypeError:
-            document = BaseDocTemplate(buffer, **kwargs)
+            document = LayoutDocTemplate(buffer, **kwargs)
         document.addPageTemplates(templates)
         build_story()
         document.build(list(story), canvasmaker=DocumasterCanvas)
         return document.page
 
-    try:
-        pages = run_build()
-    except LayoutError as exc:
-        state["degraded"] = True
-        warnings.append("A table cell was taller than a page, so tables were written as text rows instead: " + str(exc)[:120])
-        pages = run_build()
+    # Page references themselves can affect TOC line wrapping. A bounded
+    # fixed-point loop always uses the actual ReportLab page placements.
+    for attempt in range(5):
+        measured_pages.clear()
+        try:
+            pages = run_build()
+        except LayoutError as exc:
+            if state["degraded"]:
+                raise
+            state["degraded"] = True
+            warnings.append("A table cell was taller than a page, so tables were written as text rows instead: " + str(exc)[:120])
+            measured_pages.clear()
+            pages = run_build()
+        updated = {block: printed_labels[page - 1] or "" for block, page in measured_pages.items()
+                   if 1 <= page <= len(printed_labels)}
+        if updated == reference_labels:
+            break
+        reference_labels = updated
+    else:
+        warnings.append("TOC pagination did not converge in five passes; inspect the printed page references")
     data = buffer.getvalue()
     dest.write_bytes(data)
     if missing:
@@ -597,4 +693,6 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
                              "repeating header rows", "bold/italic/underline/strike/super/subscript/colour", "hyperlinks and "
                              "internal links", "images", "page size, margins, columns per section",
                              "headers/footers with page numbers", "page breaks", "document properties"],
-                       lost=lost, pages=pages)
+                       lost=lost, pages=pages,
+                       layout={"pages": pages, "blockPages": measured_pages.copy(), "printedLabels": printed_labels.copy(),
+                               "sectionIds": template_ids.copy(), "blockLabels": reference_labels.copy()})
