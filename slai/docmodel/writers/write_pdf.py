@@ -197,9 +197,12 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
                 current = None
                 out.append("<br/>")
                 continue
+            # A tab expands to printable whitespace in the PDF, but font_for
+            # accepts exactly one Unicode scalar.  Passing the expanded four
+            # spaces to ord() used to abort every PDF containing a tab.
+            target = None if ch == "\t" else font_for(ch, mono)
             if ch == "\t":
                 ch = "    "
-            target = font_for(ch, mono)
             if target != current and not (ch.isspace() and current):
                 flush()
                 current = target
