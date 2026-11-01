@@ -180,6 +180,11 @@ def main() -> int:
             body = pg.inner_text(".reader")
             check("jane.doe@example.com" in body and "NL91" in body, "personal data is listed with what was found")
             pg.screenshot(path=str(shots / "reader_pii.png"))
+            pg.click(".reader .tab[data-tab=overview]")
+            with pg.expect_download() as report:
+                pg.click("button:has-text('Export full analysis (JSON)')")
+            check(b'"schema": "documaster.analysis.v1"' in Path(report.value.path()).read_bytes(),
+                  "Reader exports a structured local analysis report")
 
             # ---- Assistant
             pg.click("a[data-ws=assistant]")

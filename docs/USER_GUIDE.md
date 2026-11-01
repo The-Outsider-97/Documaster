@@ -51,6 +51,8 @@ Drop a document and use the tabs: Overview (with expandable outline), Structure 
 
 Search supports whole words, case sensitivity, regular expressions, and page/part ranges. The first 200 results per document are available with **Show 30 more**; if the limit is reached, Documaster explicitly says more may exist. For non-PDF documents, page-range filters use the logical part number. Regular expression search uses the optional `regex` package for bounded-time matching; literal search works without it.
 
+The Overview tab can export the full analysis as JSON, including personal-data findings if present, or export structural and required-section findings as CSV. Both downloads are generated locally. CSV text from documents is quoted and protected against spreadsheet formula interpretation. These exports are analysis records, not a certification of document quality.
+
 SLAI agents may read document text by default; they run on this computer. The Privacy agent decides first, on every use, whether the text may be handed on (text with personal data is not), the Safety agent reviews it, and the Language agent can add a machine-written summary - which is discarded unless its words really come from the document. Every answer says which agent contributed. To keep agents away from one document, switch off "Let SLAI agents read this document"; to switch them off for everything use the System page or start with `--agents none`. On the Structure tab of a PDF the Quality agent reviews per-page extraction statistics (no text is sent).
 
 The System page has "Test agents now": one real call per agent, with the result shown beside it.

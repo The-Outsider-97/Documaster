@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extension, formatBytes, formatDuration, formatMinutes, formatRanges, parseRanges, plural, stem } from '../src/client/format.js';
+import { extension, formatBytes, formatDuration, formatMinutes, formatRanges, parseRanges, plural, stem, toCsv } from '../src/client/format.js';
 
 test('bytes are shown in the largest sensible unit', () => {
   assert.equal(formatBytes(0), '0 B');
@@ -54,4 +54,12 @@ test('plural forms', () => {
   assert.equal(plural(2, 'page'), '2 pages');
   assert.equal(plural(1, 'match', 'matches'), '1 match');
   assert.equal(plural(1500, 'word'), '1,500 words');
+});
+
+test('CSV findings are quoted and imported text cannot become spreadsheet formulas', () => {
+  const csv = toCsv([['Rule', 'Finding'], ['heading', 'Text with "quotes", and comma'], ['risk', '=HYPERLINK("bad")'], ['other', '-cmd']]);
+  assert.ok(csv.startsWith('\uFEFF'));
+  assert.ok(csv.includes('"Text with ""quotes"", and comma"'));
+  assert.ok(csv.includes('"\'=HYPERLINK(""bad"")"'));
+  assert.ok(csv.includes('"\'-cmd"'));
 });

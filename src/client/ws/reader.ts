@@ -1,7 +1,7 @@
 // Reader & Analysis: what a document contains and how it is built, with every finding pointing at where it comes from.
 import { dropzone, docRow, DOCUMENT_ACCEPT, emptyState, ingest, listBlock, progress, sectionTitle } from '../components.js';
 import { badge, button, checkbox, errorMessage, field, h, replace, select, toast } from '../dom.js';
-import { formatNumber, plural } from '../format.js';
+import { formatNumber, plural, toCsv } from '../format.js';
 import type { AppContext } from '../store.js';
 import type { AgentNote, DocInfo, Evidence } from '../types.js';
 import { WorkingSet } from '../workingset.js';
@@ -55,6 +55,35 @@ export function createReader(ctx: AppContext): Workspace {
   const visibleHits = new Map<string, number>();
 
   const current = (): DocInfo | undefined => (currentId ? ctx.docs.get(currentId) : undefined);
+
+  function exportReport(format: 'json' | 'csv'): void {
+    const d = current();
+    if (!d || !analysis) return;
+    const name = d.name.replace(/\.[^.]+$/, '').replace(/[^a-z0-9_-]/gi, '_').slice(0, 80) || 'document';
+    let body: string;
+    if (format === 'json') {
+      body = JSON.stringify({ schema: 'documaster.analysis.v1', exportedAt: new Date().toISOString(),
+        documentSha256: d.sha256, analysis, note: 'Heuristic findings require manual review. Personal-data findings may be included.' }, null, 2);
+    } else {
+      const rows: (string | number | null | undefined)[][] = [['Type', 'Severity', 'Rule', 'Finding', 'Page / part', 'Evidence']];
+      for (const f of analysis.structure ?? []) {
+        if (!f.evidence.length) rows.push(['Structure', f.severity, f.rule, f.message, '', '']);
+        else for (const e of f.evidence) rows.push(['Structure', f.severity, f.rule, f.message, e.page ?? e.part, e.quote ?? '']);
+      }
+      for (const s of analysis.sections?.items ?? []) {
+        const e = s.evidence[0];
+        rows.push(['Required section', s.found ? 'ok' : 'warning', s.required, s.found ? 'Found' : 'Missing', e?.page ?? e?.part ?? '', e?.quote ?? '']);
+      }
+      body = toCsv(rows);
+    }
+    const mime = format === 'json' ? 'application/json' : 'text/csv;charset=utf-8';
+    const url = URL.createObjectURL(new Blob([body], { type: mime }));
+    const link = h('a', { attrs: { href: url, download: `${name}_analysis.${format}` } });
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 
   /** A page reference that opens the PDF editor at that page for PDFs, and is plain text otherwise. */
   function ref(ev: Evidence, label?: string): HTMLElement {
@@ -148,6 +177,9 @@ export function createReader(ctx: AppContext): Workspace {
       const f = a.structure ?? [];
       replace(content, head, warn,
         h('div', { class: 'stat-grid' }, ...[['Headings', countOutline(a.outline ?? [])], ['Structure findings', f.length], ['Personal data items', a.pii?.total ?? 0], ['Repeated paragraphs', a.duplicates?.total ?? 0]].map(([l, v]) => h('div', { class: 'stat' }, h('div', { class: 'stat-value', text: formatNumber(Number(v)) }), h('div', { class: 'stat-label', text: String(l) })))),
+        h('div', { class: 'row-actions wrap' },
+          button('Export full analysis (JSON)', () => exportReport('json'), 'btn-small', { title: 'Includes personal-data findings when detected' }),
+          button('Export structure & sections (CSV)', () => exportReport('csv'), 'btn-small', { title: 'Spreadsheet-safe findings with source references' })),
         sectionTitle('Outline'), a.outline?.length ? h('div', { class: 'outline' }, ...outlineView(a.outline)) : h('div', { class: 'muted', text: 'This document has no headings.' }));
     } else if (tab === 'structure') {
       replace(content, head, warn, a.agents?.length ? h('div', { class: 'agent-notes' }, ...a.agents.map(noteView)) : null, (a.structure ?? []).length ? h('div', {}, ...(a.structure ?? []).map((f) => h('section', { class: `card finding ${f.severity}` }, h('div', { class: 'card-head' }, badge(f.severity, f.severity === 'problem' ? 'bad' : f.severity === 'warning' ? 'warn' : 'info'), h('span', { text: f.message })), f.evidence.length ? evidenceList(f.evidence, 5) : null)))
