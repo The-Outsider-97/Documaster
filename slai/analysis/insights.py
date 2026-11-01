@@ -285,12 +285,34 @@ def checklist(units: list[Unit], required: list[str]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------------------- search
-def search(units: list[Unit], query: str, *, regex: bool = False, case: bool = False, limit: int = 300) -> list[dict[str, Any]]:
+def search(units: list[Unit], query: str, *, regex: bool = False, case: bool = False, limit: int = 300,
+           whole_word: bool = False, page_from: int | None = None, page_to: int | None = None) -> list[dict[str, Any]]:
+    """Locate bounded matches with source offsets. Page filters use logical parts for non-PDFs.
+
+    User-supplied regexes must run through the timeout-capable `regex` package; Python's
+    standard `re` has no execution time limit and is unsafe for untrusted patterns.
+    """
+    if not query or len(query) > 500 or limit < 1 or limit > 1000:
+        raise ValueError("Invalid search text or result limit")
     flags = 0 if case else re.IGNORECASE
-    pattern = re.compile(query if regex else re.escape(query), flags)
+    expression = query if regex else re.escape(query)
+    if whole_word:
+        expression = rf"(?<!\w)(?:{expression})(?!\w)"
+    if regex:
+        try:
+            import regex as safe_regex
+        except ImportError as exc:
+            raise ValueError("Pattern search requires the optional 'regex' package") from exc
+        pattern = safe_regex.compile(expression, flags)
+    else:
+        pattern = re.compile(expression, flags)
     hits: list[dict[str, Any]] = []
     for u in units:
-        for m in pattern.finditer(u.text):
+        loc = u.page or u.part
+        if (page_from is not None and loc < page_from) or (page_to is not None and loc > page_to):
+            continue
+        matches = pattern.finditer(u.text, timeout=0.05) if regex else pattern.finditer(u.text)
+        for m in matches:
             if m.end() == m.start():
                 continue
             a = max(0, m.start() - 60)

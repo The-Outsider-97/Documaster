@@ -1,9 +1,9 @@
 // Right-hand panels of the PDF editor, part 1: pages, annotations, stamps, and find.
 import { downloadLink, listBlock, verificationView } from '../components.js';
-import { badge, button, checkbox, errorMessage, field, h, replace, select, toast } from '../dom.js';
+import { badge, button, checkbox, errorMessage, field, h, promptText, replace, select, toast } from '../dom.js';
 import { parseRanges, plural } from '../format.js';
 import type { Rect } from '../geometry.js';
-import type { FindHit } from '../types.js';
+import type { AnnotationInfo, FindHit } from '../types.js';
 import type { Panel, PanelEnv, Tool } from './editor-core.js';
 
 function toolButton(env: PanelEnv, tool: Tool, label: string, title: string): HTMLButtonElement {
@@ -125,6 +125,12 @@ export function annotatePanel(env: PanelEnv): Panel {
     await core.run({ op: 'annotate', annotations: items.map((i) => i.spec) }, `Adding ${plural(items.length, 'annotation')}`);
   }
 
+  async function editComment(a: AnnotationInfo): Promise<void> {
+    const text = await promptText('Edit comment', 'Comment text', a.text);
+    if (text === null || text === a.text) return;
+    await core.run({ op: 'edit_note', selector: a.id ? { id: a.id } : { page: a.page, index: a.index }, text }, 'Editing comment');
+  }
+
   function render(): void {
     const staged = core.stagedOf('annotation');
     replace(list, ...(staged.length ? staged.map((s) => h('div', { class: `item${core.selectedStaged === s.id ? ' selected' : ''}` },
@@ -132,7 +138,9 @@ export function annotatePanel(env: PanelEnv): Panel {
     const anns = core.info?.annotations ?? [];
     replace(existing, ...(anns.length ? anns.map((a) => h('div', { class: 'item' },
       h('span', { class: 'clip', text: `${a.type} · p. ${a.page + 1}${a.text ? ` · ${a.text.slice(0, 40)}` : ''}` }),
-      h('span', { class: 'item-actions' }, button('Go', () => core.setPage(a.page), 'btn-small'), button('Remove', () => void core.run({ op: 'remove_annotations', selectors: [a.id ? { id: a.id } : { page: a.page, index: a.index }] }, 'Removing annotation'), 'btn-small btn-danger')))) : [h('div', { class: 'muted small', text: 'This document has no annotations.' })]));
+      h('span', { class: 'item-actions' }, button('Go', () => core.setPage(a.page), 'btn-small'),
+        a.type === 'Text' ? button('Edit', () => void editComment(a), 'btn-small', { title: 'Edit the text of this sticky-note comment' }) : null,
+        button('Remove', () => void core.run({ op: 'remove_annotations', selectors: [a.id ? { id: a.id } : { page: a.page, index: a.index }] }, 'Removing annotation'), 'btn-small btn-danger')))) : [h('div', { class: 'muted small', text: 'This document has no annotations.' })]));
     (apply_.disabled) = !staged.length || core.busy;
     apply_.textContent = staged.length ? `Add ${plural(staged.length, 'annotation')} to the PDF` : 'Add annotations to the PDF';
     syncTools(root, env);

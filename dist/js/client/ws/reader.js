@@ -17,10 +17,12 @@ export function createReader(ctx) {
     let preset = 'report';
     let custom = '';
     let summaryCache = null;
+    let summaryLength = 6;
     let compareWith = '';
     let compare = null;
     let searchResult = null;
-    let query = { text: '', regex: false, caseSensitive: false };
+    const query = { text: '', regex: false, caseSensitive: false, wholeWord: false, pageFrom: '', pageTo: '' };
+    const visibleHits = new Map();
     const current = () => (currentId ? ctx.docs.get(currentId) : undefined);
     /** A page reference that opens the PDF editor at that page for PDFs, and is plain text otherwise. */
     function ref(ev, label) {
@@ -87,17 +89,25 @@ export function createReader(ctx) {
         return h('div', { class: 'evidence' }, ...items.slice(0, max).map((e) => h('div', { class: 'ev' }, ref(e), e.quote ? h('span', { class: 'quote', text: `“${e.quote}”` }) : null)));
     }
     function outlineView(items, depth = 0) {
-        return items.flatMap((n) => [h('div', { class: 'outline-row', style: { paddingLeft: `${depth * 16}px` } }, h('span', { text: n.title }), n.page ? ref({ docId: currentId ?? '', doc: '', blockId: n.blockId, page: n.page, part: n.part, start: 0, end: 0 }) : null), ...outlineView(n.children, depth + 1)]);
+        return items.map((n) => {
+            const heading = h('span', { class: 'outline-row' }, h('span', { text: n.title }), n.page ? ref({ docId: currentId ?? '', doc: '', blockId: n.blockId, page: n.page, part: n.part, start: 0, end: 0 }) : null);
+            return n.children.length ? h('details', { class: 'outline-branch', attrs: { open: depth === 0 } }, h('summary', {}, heading), h('div', { class: 'outline-children' }, ...outlineView(n.children, depth + 1)))
+                : h('div', { class: 'outline-leaf' }, heading);
+        });
     }
     async function ensureSummary(force = false) {
         const d = current();
         if (!d || (summaryCache && !force))
             return;
+        const requestedLength = summaryLength;
         try {
-            summaryCache = await ctx.api.post('/api/analysis/summary', { doc: d.id, sentences: 6 });
+            const result = await ctx.api.post('/api/analysis/summary', { doc: d.id, sentences: requestedLength });
+            if (currentId === d.id && summaryLength === requestedLength)
+                summaryCache = result;
         }
         catch (e) {
-            toast(errorMessage(e), 'error');
+            if (currentId === d.id && summaryLength === requestedLength)
+                toast(errorMessage(e), 'error');
         }
     }
     function noteView(n) {
@@ -140,19 +150,30 @@ export function createReader(ctx) {
         }
         else if (tab === 'text') {
             const r = a.readability ?? {};
-            replace(content, head, warn, r['available'] === false ? h('div', { class: 'muted', text: String(r['reason'] ?? 'Not available') }) : h('div', {}, h('div', { class: 'stat-grid' }, ...[['Words per sentence', r['avgWordsPerSentence']], ['LIX', r['lix'] !== undefined ? `${r['lix']} (${r['lixLevel']})` : '–'], ['Flesch reading ease', r['fleschReadingEase'] !== undefined ? `${r['fleschReadingEase']} (${r['fleschLevel']})` : 'English only'], ['Grade level', r['fleschKincaidGrade'] ?? 'English only']]
+            const st = a.statistics;
+            replace(content, head, warn, st ? h('div', { class: 'stat-grid' }, ...[['Words', st.words], ['Unique words', st.uniqueWords], ['Sentences', st.sentences],
+                ['Paragraphs', st.paragraphs], ['Characters', st.characters], ['Reading time (min)', st.readingMinutes]]
+                .map(([l, v]) => h('div', { class: 'stat' }, h('div', { class: 'stat-value', text: String(v) }), h('div', { class: 'stat-label', text: l })))) : null, r['available'] === false ? h('div', { class: 'muted', text: String(r['reason'] ?? 'Not available') }) : h('div', {}, h('div', { class: 'stat-grid' }, ...[['Words per sentence', r['avgWordsPerSentence']], ['LIX', r['lix'] !== undefined ? `${r['lix']} (${r['lixLevel']})` : '–'], ['Flesch reading ease', r['fleschReadingEase'] !== undefined ? `${r['fleschReadingEase']} (${r['fleschLevel']})` : 'English only'], ['Grade level', r['fleschKincaidGrade'] ?? 'English only']]
                 .map(([l, v]) => h('div', { class: 'stat' }, h('div', { class: 'stat-value', text: String(v ?? '–') }), h('div', { class: 'stat-label', text: String(l) })))), sectionTitle('Main terms'), h('div', { class: 'chips' }, ...(a.keywords ?? []).map((k) => h('span', { class: 'chip', title: k.evidence[0] ? `First at ${k.evidence[0].page ? `p. ${k.evidence[0].page}` : `part ${k.evidence[0].part}`}` : '' }, k.term, h('b', { text: String(k.count) })))), a.duplicates?.groups.length ? h('div', {}, sectionTitle('Repeated text'), ...a.duplicates.groups.slice(0, 10).map((g) => h('div', { class: 'card finding' }, badge(`${g.kind} ×${g.count}`, 'warn'), h('div', { class: 'quote', text: `“${g.text.slice(0, 200)}”` }), evidenceList(g.evidence, 4)))) : null));
         }
         else if (tab === 'summary') {
-            replace(content, head, h('div', { class: 'muted', text: 'Loading…' }));
+            const requestedLength = summaryLength;
+            const controls = h('div', { class: 'row-actions wrap' }, field('Summary length', select([3, 6, 12].map((n) => ({ value: String(n), label: `${n} source sentences` })), String(summaryLength), (v) => {
+                summaryLength = Number(v);
+                summaryCache = null;
+                renderContent();
+            })));
+            replace(content, head, controls, h('div', { class: 'muted', text: 'Loading…' }));
             void ensureSummary().then(() => {
+                if (tab !== 'summary' || currentId !== d.id || summaryLength !== requestedLength)
+                    return;
                 const s = summaryCache;
                 if (!s) {
-                    replace(content, head, h('div', { class: 'error', text: 'The summary could not be made.' }));
+                    replace(content, head, controls, h('div', { class: 'error', text: 'The summary could not be made.' }));
                     return;
                 }
                 const machine = s.text.split('\n\nMachine-written summary')[1];
-                replace(content, head, h('div', { class: 'notice', text: s.summary.note ?? 'Sentences are quoted from the document.' }), ...s.summary.sentences.map((x) => h('blockquote', { class: 'quote-card' }, x.text, h('div', {}, ref(x.evidence)))), machine ? h('section', { class: 'card' }, h('h4', { text: 'Machine-written summary' }), badge('Written by the Language agent - check it against the quoted sentences', 'warn'), h('p', { text: machine.replace(/^[^\n]*\n/, '').trim() })) : null, h('div', { class: 'agent-notes' }, ...s.agents.map(noteView)), button('Refresh', () => { summaryCache = null; void ensureSummary(true).then(renderContent); }, 'btn-small'));
+                replace(content, head, controls, h('div', { class: 'notice', text: s.summary.note ?? 'Sentences are quoted from the document.' }), ...s.summary.sentences.map((x) => h('blockquote', { class: 'quote-card' }, x.text, h('div', {}, ref(x.evidence)))), machine ? h('section', { class: 'card' }, h('h4', { text: 'Machine-written summary' }), badge('Written by the Language agent - check it against the quoted sentences', 'warn'), h('p', { text: machine.replace(/^[^\n]*\n/, '').trim() })) : null, h('div', { class: 'agent-notes' }, ...s.agents.map(noteView)), button('Refresh', () => { summaryCache = null; void ensureSummary(true).then(renderContent); }, 'btn-small'));
             });
         }
         else if (tab === 'pii') {
@@ -192,14 +213,22 @@ export function createReader(ctx) {
         const input = h('input', { class: 'input', value: query.text, attrs: { type: 'search', placeholder: 'Search the open documents', 'aria-label': 'Search' }, on: { input: (e) => { query.text = e.target.value; }, keydown: (e) => { if (e.key === 'Enter')
                     void doSearch(); } } });
         const r = searchResult;
-        replace(content, h('div', { class: 'card options' }, input, h('div', { class: 'row-actions wrap' }, checkbox('Pattern (regex)', query.regex, (v) => { query.regex = v; }), checkbox('Match case', query.caseSensitive, (v) => { query.caseSensitive = v; }), button('Search', () => void doSearch(), 'btn-primary btn-small')), h('div', { class: 'muted small', text: docs.length ? `Searching ${plural(docs.length, 'document')}.` : 'Add documents on the left.' })), r ? h('div', {}, h('div', { class: 'muted', text: `${plural(r.total, 'match', 'matches')} for “${r.query}”` }), ...r.results.filter((x) => x.count).map((x) => h('section', { class: 'card' }, h('h4', { text: `${x.name} (${x.count})` }), ...x.hits.slice(0, 30).map((hit) => h('div', { class: 'ev' }, ref(hit.evidence), h('span', { class: 'quote', text: `…${hit.context}…` })))))) : null);
+        replace(content, h('div', { class: 'card options' }, input, h('div', { class: 'row-actions wrap' }, checkbox('Pattern (regex)', query.regex, (v) => { query.regex = v; }), checkbox('Match case', query.caseSensitive, (v) => { query.caseSensitive = v; }), checkbox('Whole words', query.wholeWord, (v) => { query.wholeWord = v; })), h('div', { class: 'row' }, field('From page/part', h('input', { class: 'input short', value: query.pageFrom, attrs: { type: 'number', min: 1, placeholder: 'Any', 'aria-label': 'From page or part' }, on: { input: (e) => { query.pageFrom = e.target.value; } } })), field('Through page/part', h('input', { class: 'input short', value: query.pageTo, attrs: { type: 'number', min: 1, placeholder: 'Any', 'aria-label': 'Through page or part' }, on: { input: (e) => { query.pageTo = e.target.value; } } })), button('Search', () => void doSearch(), 'btn-primary btn-small')), h('div', { class: 'muted small', text: docs.length ? `Searching ${plural(docs.length, 'document')}. A page filter uses logical parts for non-PDF documents.` : 'Add documents on the left.' })), r ? h('div', {}, h('div', { class: 'muted', text: `${r.truncated ? 'At least ' : ''}${plural(r.total, 'match', 'matches')} for “${r.query}”${r.truncated ? ' (first 200 per document shown)' : ''}` }), ...r.results.filter((x) => x.count).map((x) => h('section', { class: 'card' }, h('h4', { text: `${x.name} (${x.truncated ? 'at least ' : ''}${x.count})` }), ...x.hits.slice(0, visibleHits.get(x.doc) ?? 30).map((hit) => h('div', { class: 'ev' }, ref(hit.evidence), h('span', { class: 'quote', text: `…${hit.context}…` }))), (visibleHits.get(x.doc) ?? 30) < x.hits.length ? button('Show 30 more', () => { visibleHits.set(x.doc, (visibleHits.get(x.doc) ?? 30) + 30); renderSearch(); }, 'btn-small') : null))) : null);
     }
     async function doSearch() {
         const docs = set.docs();
         if (!query.text || !docs.length)
             return;
+        const from = query.pageFrom.trim(), to = query.pageTo.trim();
+        const valid = (v) => !v || (/^\d+$/.test(v) && Number.isSafeInteger(Number(v)) && Number(v) > 0);
+        if (!valid(from) || !valid(to) || (from && to && Number(from) > Number(to))) {
+            toast('Enter a valid page/part range', 'error');
+            return;
+        }
         try {
-            searchResult = await ctx.api.post('/api/analysis/search', { docs: docs.map((d) => d.id), query: query.text, regex: query.regex, case: query.caseSensitive });
+            searchResult = await ctx.api.post('/api/analysis/search', { docs: docs.map((d) => d.id), query: query.text, regex: query.regex,
+                case: query.caseSensitive, wholeWord: query.wholeWord, pageFrom: from ? Number(from) : undefined, pageTo: to ? Number(to) : undefined });
+            visibleHits.clear();
         }
         catch (e) {
             toast(errorMessage(e), 'error');

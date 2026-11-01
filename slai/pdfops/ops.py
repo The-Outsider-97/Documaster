@@ -306,6 +306,27 @@ def _remove_annotations(ctx: Ctx, spec: dict[str, Any]) -> OpResult:
     return OpResult(f"Removed {n} annotation(s)", details={"removed": n})
 
 
+@op("edit_note", "annotate")
+def _edit_note(ctx: Ctx, spec: dict[str, Any]) -> OpResult:
+    selector = spec.get("selector")
+    if not isinstance(selector, dict):
+        raise ValidationFailed("Choose the comment to edit")
+    text = spec.get("text")
+    if not isinstance(text, str):
+        raise ValidationFailed("Enter the replacement comment text")
+    w = ctx.writer()
+    if not annotate.edit_note(w, selector, text):
+        return OpResult("Comment unchanged", changed=False)
+    ctx.save(w)
+    notes = annotate.listing(open_reader(ctx.out, ctx.opw))
+    matching = [a for a in notes if (a["id"] == selector.get("id") if selector.get("id") else
+                                      a["page"] == selector.get("page") and a["index"] == selector.get("index"))]
+    if len(matching) != 1 or matching[0]["text"] != text:
+        raise OutputFailed("The updated comment could not be verified and was discarded")
+    return OpResult("Edited comment", verification={"ok": True, "checks": [
+        {"name": "Comment text preserved", "ok": True, "detail": "Reopened and checked the saved annotation"}]})
+
+
 @op("stamp", "modify")
 def _stamp(ctx: Ctx, spec: dict[str, Any]) -> OpResult:
     kind = spec.get("kind")

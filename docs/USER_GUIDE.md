@@ -25,7 +25,7 @@ Converting a file to its own format is refused (there is nothing to do).
 ## Merger & Page Organizer
 
 1. Drop files. Every page appears as a card, coloured by its source file.
-2. Click a card to select it (Ctrl/Shift-click for several). **Alt+↑/↓** or the arrow buttons move the selection; drag cards to reorder; **Exclude/Include** toggles pages; rotate, duplicate, insert a blank page.
+2. Click a card to select it (Ctrl/Shift-click for several). **Alt+↑/↓** or the arrow buttons move the selection; drag a thumbnail with a mouse, pen or touch to reorder. A marker shows the insertion position, and selected pages move together. Drag near the window edge to scroll. **Exclude/Include** toggles pages; rotate, duplicate, insert a blank page. The page-order Undo/Redo buttons also reverse completed drags.
 3. Choose what to merge into (PDF keeps the PDF pages unchanged) and press **Merge Files**. The result is verified and offered for download. **Open in PDF Editor** continues with it.
 4. **Edit Files** opens the first selected PDF in the editor. **Clear** empties the list.
 
@@ -36,7 +36,7 @@ If a PDF is password protected you are asked for the password; it is kept in mem
 Open a PDF (Open PDF…, or from another workspace). The strip on the left shows pages; the viewer in the middle; tools on the right.
 
 * **Pages** - rotate, move, delete, duplicate, insert a blank page, extract selected pages, split into one file per page, insert pages from another open PDF, crop.
-* **Annotate** - choose a tool (highlight, underline, strike-out, comment, rectangle, ellipse, freehand) and draw. Marks stay as **drafts** until you press "Add annotations to the PDF"; they then become standard PDF annotations other viewers show. Existing annotations are listed and can be removed.
+* **Annotate** - choose a tool (highlight, underline, strike-out, comment, rectangle, ellipse, freehand) and draw. Marks stay as **drafts** until you press "Add annotations to the PDF"; they then become standard PDF annotations other viewers show. Existing annotations are listed and can be removed. Sticky-note comments also have an **Edit** action to change their text without changing their annotation identity. This does not provide arbitrary editing of existing PDF page text.
 * **Add** - watermark, page numbers, text at a point, text boxes, images.
 * **Redact** - find text, scan for personal data, or draw areas; mark them, then **Permanently redact**. The marked pages become images with black boxes; the saved file is checked for leftover text and metadata and discarded if the check fails. Text outside the visible page area on a redacted page is removed with the page. After redaction the page text is no longer selectable (run OCR if you need it back).
 * **Forms** - fill fields; optionally flatten. Signature fields are never filled or signed.
@@ -47,7 +47,9 @@ Open a PDF (Open PDF…, or from another workspace). The strip on the left shows
 
 ## Reader & Analysis
 
-Drop a document and use the tabs: Overview, Structure (outline and problems found), Words & readability, Summary (extractive: sentences quoted from the document), Personal data (what was found, with page links; "Redact these in the PDF Editor…"), Sections (check against a preset or your own list), Compare (two documents), Search.
+Drop a document and use the tabs: Overview (with expandable outline), Structure (outline and problems found), Words & readability (document totals and language-appropriate readability), Summary (extractive: choose three, six or twelve source sentences), Personal data (what was found, with page links; "Redact these in the PDF Editor…"), Sections (check against a preset or your own list), Compare (two documents), Search.
+
+Search supports whole words, case sensitivity, regular expressions, and page/part ranges. The first 200 results per document are available with **Show 30 more**; if the limit is reached, Documaster explicitly says more may exist. For non-PDF documents, page-range filters use the logical part number. Regular expression search uses the optional `regex` package for bounded-time matching; literal search works without it.
 
 SLAI agents may read document text by default; they run on this computer. The Privacy agent decides first, on every use, whether the text may be handed on (text with personal data is not), the Safety agent reviews it, and the Language agent can add a machine-written summary - which is discarded unless its words really come from the document. Every answer says which agent contributed. To keep agents away from one document, switch off "Let SLAI agents read this document"; to switch them off for everything use the System page or start with `--agents none`. On the Structure tab of a PDF the Quality agent reviews per-page extraction statistics (no text is sent).
 

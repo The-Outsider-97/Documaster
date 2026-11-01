@@ -43,9 +43,9 @@ npm start            # build + start the server
 
 * **Word Counter** - type or drop files. Words, characters, sentences, paragraphs, reading time, language guess (labelled as a guess), top terms, length goals. Scanned PDFs can be read with OCR. The counting rules are shown.
 * **Converter** - PDF, Word, OpenDocument, RTF, HTML, Markdown, text, XML, CSV (read) and SLDC to PDF, DOCX, ODT, RTF, HTML, Markdown, TXT, XML and SLDC. Each result is re-opened and compared with the source; the card lists what was kept and what was not carried over. Optionally LibreOffice does the conversion to keep page layout.
-* **Merger & Page Organizer** - drop several files, see every page as a card, drag (or use Alt+arrows) to reorder, exclude, rotate, duplicate or insert blank pages, then **Merge Files**. PDF pages are copied unchanged; other formats merge through SLDC logical pages. **Edit Files** opens the PDF in the editor.
-* **PDF Editor** - page strip and viewer; rotate, move, delete, duplicate, extract, split, insert, crop; highlight, underline, strike-out, comments, shapes, freehand; watermark, page numbers, text, text boxes, images; fill and flatten forms; bookmarks and properties; password; compress; OCR; **redaction that removes the content** (pages with redactions become images, then the saved result is checked for leftover text and metadata; a failed check deletes it). Every change is a revision you can undo and redo. Documaster never signs or re-signs a document.
-* **Reader & Analysis** - outline, structure checks, keywords, readability, repeated text, required sections (proposal, report, contract, research paper, or your own list), personal data with page positions, document comparison, search. Every finding points to its page. "Redact these in the PDF Editor" hands personal data to the editor.
+* **Merger & Page Organizer** - drop several files, see every page as a card, drag with a pointer (mouse/pen/touch) or use Alt+arrows to reorder, including multi-page selections; edge scrolling and an insertion marker clarify the move. Exclude, rotate, duplicate or insert blank pages, then **Merge Files**. PDF pages are copied unchanged; other formats merge through SLDC logical pages. **Edit Files** opens the PDF in the editor.
+* **PDF Editor** - page strip and viewer; rotate, move, delete, duplicate, extract, split, insert, crop; highlight, underline, strike-out, comments, shapes, freehand; editable sticky-note comment text; watermark, page numbers, text, text boxes, images; fill and flatten forms; bookmarks and properties; password; compress; OCR; **redaction that removes the content** (pages with redactions become images, then the saved result is checked for leftover text and metadata; a failed check deletes it). Every change is a revision you can undo and redo. Documaster never signs or re-signs a document.
+* **Reader & Analysis** - expandable outline, structure checks, keywords, document statistics, readability, repeated text, configurable extractive-summary length, required sections (proposal, report, contract, research paper, or your own list), personal data with page positions, document comparison, whole-word/case/regex search with page/part filters. Every finding points to its page. "Redact these in the PDF Editor" hands personal data to the editor.
 * **AI Assistant** - ask in English or Dutch. Questions are answered from the document with the quoted passage and its page, or the assistant says it is not there. Anything that changes a file (convert, merge, rotate, delete pages, watermark, page numbers, password, compress, OCR, redact personal data) is a **proposal** you confirm: single use, valid 15 minutes, void if the document changed. Passwords are asked for in the confirmation box, never read from the chat. Instructions inside a document are quoted, never followed.
 
 ## SLAI agents - what is real
@@ -60,9 +60,9 @@ Loopback only; per-launch token; Host, Origin and request-marker checks; strict 
 
 ```bash
 npm run typecheck        # strict TypeScript
-npm test                 # 39 tests: page organiser engine, API client (mock fetch), formatting, geometry
-npm run test:py          # 148 tests against a real server and real files: security, redaction, conversion, merging, PDF operations, forms, OCR, assistant, agents (stand-ins), counting, personal data
-python3 tests_e2e/run_browser.py   # 30 checks in Chromium (needs: pip install playwright && playwright install chromium)
+npm test                 # page organiser engine, API client (mock fetch), formatting, geometry
+npm run test:py          # real server and files: security, redaction, conversion, merging, PDF operations, forms, OCR, assistant, agents (stand-ins), counting, personal data, Reader search
+python3 tests_e2e/run_browser.py   # Chromium interactions, including pointer drag (needs: pip install playwright && playwright install chromium)
 python3 tools/make_reports.py --run-tests   # regenerates docs/report-A ... H from the running code
 python3 tools/probe_agents.py --root <COPY of SLAI> privacy   # try one real agent (use a copy of the checkout)
 ```

@@ -96,6 +96,18 @@ def main() -> int:
             pg.wait_for_selector(".page-card", timeout=20000)
             pg.wait_for_timeout(800)
             check(pg.locator(".page-card").count() == 3, "merger shows every page as a card")
+            # Exercise a real pointer gesture, not just Organizer.dropBefore or keyboard shortcuts.
+            origin = pg.locator(".page-card").nth(2).locator(".page-thumb").bounding_box()
+            target = pg.locator(".page-card").nth(0).bounding_box()
+            pg.mouse.move(origin["x"] + origin["width"] / 2, origin["y"] + origin["height"] / 2)
+            pg.mouse.down()
+            pg.mouse.move(target["x"] + target["width"] / 4, target["y"] + target["height"] / 2, steps=12)
+            pg.mouse.up()
+            check("sample.docx" in pg.locator(".page-card").first.locator(".src").inner_text(),
+                  "pointer dragging moves the chosen page to the first position")
+            pg.click("button[data-act=undo]")
+            check("sample.pdf" in pg.locator(".page-card").first.locator(".src").inner_text(),
+                  "pointer drag order is undoable")
             pg.click(".page-card >> nth=1")
             pg.keyboard.press("Alt+ArrowUp")
             pg.wait_for_timeout(200)

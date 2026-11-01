@@ -135,6 +135,8 @@ details > summary { cursor: pointer; }
 .toolbar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; position: sticky; top: -24px; z-index: 5; }
 .page-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; padding: 4px 2px 40px; }
 .page-card { position: relative; background: var(--surface); border: 2px solid var(--border); border-radius: 10px; padding: 6px; cursor: grab; outline-offset: 2px; display: flex; flex-direction: column; gap: 4px; }
+.page-card .page-thumb, .page-card .page-meta { touch-action: none; user-select: none; }
+.page-card:active { cursor: grabbing; }
 .page-card::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 4px; border-radius: 0 4px 4px 0; background: var(--doc, var(--accent)); }
 .page-card.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 .page-card.excluded { opacity: .45; } .page-card.excluded .page-thumb::after { content: "Excluded"; position: absolute; inset: auto 6px 6px auto; background: var(--bad); color: #fff; font-size: .7rem; padding: 0 6px; border-radius: 4px; }
@@ -176,6 +178,11 @@ details > summary { cursor: pointer; }
 /* ---- reader / assistant ---- */
 .reader-content { display: flex; flex-direction: column; gap: 12px; } .reader .tabs { border: 1px solid var(--border); border-radius: 10px; margin-bottom: 12px; }
 .outline-row { display: flex; gap: 10px; justify-content: space-between; padding: 3px 0; border-bottom: 1px dashed var(--border); }
+.outline-branch { padding-left: 8px; border-left: 1px solid var(--border); }
+.outline-branch > summary { cursor: pointer; padding: 2px 0; }
+.outline-branch > summary .outline-row { display: inline-flex; width: calc(100% - 22px); vertical-align: middle; }
+.outline-children { margin-left: 14px; }
+.outline-leaf { margin-left: 9px; }
 .finding { margin-bottom: 8px; } .evidence .ev, .evidence-box .ev { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; font-size: .88rem; } .quote { color: var(--muted); font-style: italic; }
 .quote-card { margin: 8px 0; padding: 8px 12px; border-left: 3px solid var(--accent); background: var(--surface); border-radius: 0 8px 8px 0; }
 .diff > div { padding: 4px 8px; margin: 2px 0; border-radius: 6px; font-size: .88rem; } .diff .del { background: rgba(248, 113, 113, .14); } .diff .ins { background: rgba(74, 222, 128, .14); }
