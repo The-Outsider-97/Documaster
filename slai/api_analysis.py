@@ -54,6 +54,7 @@ def analysis_run(app: App, req: Request) -> Any:
         out["keywords"] = insights.keywords(units, lang, int(b.get("top", 20)))
     if "readability" in checks:
         out["readability"] = insights.readability(full_text(units), lang)
+        out["statistics"] = textstats.basic_counts(full_text(units))
     if "pii" in checks:
         out["pii"] = pii.scan(units)
     if "duplicates" in checks:
@@ -81,15 +82,28 @@ def analysis_search(app: App, req: Request) -> Any:
     query = b.get("query")
     if not isinstance(ids, list) or not ids or not isinstance(query, str) or not query:
         raise ValidationFailed("Choose documents and enter what to look for")
+    if len(query) > 500:
+        raise ValidationFailed("Search text is too long (maximum 500 characters)")
+    page_from, page_to = b.get("pageFrom"), b.get("pageTo")
+    if page_from is not None and (type(page_from) is not int or page_from < 1):
+        raise ValidationFailed("The starting page/part must be a positive whole number")
+    if page_to is not None and (type(page_to) is not int or page_to < 1):
+        raise ValidationFailed("The ending page/part must be a positive whole number")
+    if page_from and page_to and page_from > page_to:
+        raise ValidationFailed("The starting page/part must not exceed the ending page/part")
     results = []
     for did in ids[:20]:
         doc, units, _ = _units(app, str(did))
         try:
-            hits = insights.search(units, query, regex=bool(b.get("regex")), case=bool(b.get("case")))
+            hits = insights.search(units, query, regex=bool(b.get("regex")), case=bool(b.get("case")),
+                                   whole_word=bool(b.get("wholeWord")), page_from=page_from,
+                                   page_to=page_to, limit=201)
         except Exception as exc:  # noqa: BLE001 - bad regex
-            raise ValidationFailed(f"That is not a valid pattern: {exc}") from exc
-        results.append({"doc": doc.id, "name": doc.name, "count": len(hits), "hits": hits[:200]})
-    return {"query": query, "results": results, "total": sum(r["count"] for r in results)}
+            raise ValidationFailed(f"Search could not finish safely: {exc}") from exc
+        results.append({"doc": doc.id, "name": doc.name, "count": min(len(hits), 200),
+                        "truncated": len(hits) > 200, "hits": hits[:200]})
+    return {"query": query, "results": results, "total": sum(r["count"] for r in results),
+            "truncated": any(r["truncated"] for r in results)}
 
 
 @route("POST", "/api/documents/{id}/pii", mutating=False)

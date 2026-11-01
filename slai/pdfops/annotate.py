@@ -222,3 +222,34 @@ def remove(writer: Any, selectors: list[dict[str, Any]]) -> int:
         from pypdf.generic import ArrayObject, NameObject
         page[NameObject("/Annots")] = ArrayObject(keep)
     return removed
+
+
+def edit_note(writer: Any, selector: dict[str, Any], text: str) -> bool:
+    """Change the text of an existing sticky-note annotation without replacing its identity.
+
+    Editing other annotation kinds can invalidate their appearance/geometry, so this
+    deliberately accepts only /Text annotations. The visible note icon has no text in
+    its appearance stream; viewers read the updated /Contents field when opened.
+    """
+    from pypdf.generic import NameObject, TextStringObject
+
+    if not isinstance(text, str) or not text.strip() or len(text) > 20000:
+        raise ValidationFailed("A comment needs between 1 and 20000 characters")
+    name = selector.get("id")
+    page_no, index = selector.get("page"), selector.get("index")
+    if not name and (not isinstance(page_no, int) or not isinstance(index, int)):
+        raise ValidationFailed("Identify the comment by id or page and index")
+    for pi, page in enumerate(writer.pages):
+        for ai, ref in enumerate(page.get("/Annots", [])):
+            a = ref.get_object()
+            found = str(a.get("/NM", "")) == name if name else (pi == page_no and ai == index)
+            if not found:
+                continue
+            if str(a.get("/Subtype")) != "/Text":
+                raise ValidationFailed("Only sticky-note comments can be edited here")
+            if str(a.get("/Contents", "")) == text:
+                return False
+            a[NameObject("/Contents")] = TextStringObject(text)
+            a[NameObject("/M")] = TextStringObject(_pdf_date())
+            return True
+    raise ValidationFailed("The selected comment no longer exists")

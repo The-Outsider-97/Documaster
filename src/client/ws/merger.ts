@@ -135,6 +135,7 @@ export function createMerger(ctx: AppContext): Workspace {
   const toolbar = h('div', { class: 'toolbar', attrs: { role: 'toolbar', 'aria-label': 'Page actions' } });
   const fileList = h('div', { class: 'doc-list' });
   const status = h('div', { class: 'muted small' });
+  const dragStatus = h('div', { class: 'visually-hidden', attrs: { 'aria-live': 'polite', 'aria-atomic': 'true' } });
   const notices = h('div', { class: 'notices' });
   const optionsBox = h('div', { class: 'card options' });
   const mergeBtn = button('Merge Files', () => void c._merge_selected_pdfs(), 'btn-primary');
@@ -150,6 +151,71 @@ export function createMerger(ctx: AppContext): Workspace {
   });
   const org = c.organizer;
   org.onChange(() => render());
+
+  // Pointer dragging works with a mouse, pen and touch. The browser's native HTML drag
+  // events are deliberately not mixed with this path (touch support is inconsistent).
+  type DropTarget = { uid: string; before: boolean; beforeUid: string | null };
+  type PageDrag = {
+    uid: string; pointerId: number; startX: number; startY: number; x: number; y: number;
+    active: boolean; target: DropTarget | null; frame: number | null;
+  };
+  let drag: PageDrag | null = null;
+  let suppressClickUid: string | null = null;
+
+  function clearDropMarkers(): void {
+    for (const card of cards.values()) card.classList.remove('dragging', 'drop-before', 'drop-after');
+  }
+
+  function dropTargetAt(x: number, y: number): DropTarget | null {
+    const hit = document.elementFromPoint(x, y)?.closest<HTMLElement>('.page-card');
+    const card = hit && grid.contains(hit) ? hit : null;
+    const targetUid = card?.dataset['uid'];
+    if (!targetUid || org.selected.has(targetUid)) {
+      // The empty space below the grid's final row is a valid drop-at-end target.
+      const bounds = grid.getBoundingClientRect();
+      const last = grid.lastElementChild as HTMLElement | null;
+      if (!targetUid && last?.classList.contains('page-card') && x >= bounds.left && x <= bounds.right &&
+          y >= last.getBoundingClientRect().bottom && y <= bounds.bottom) {
+        return { uid: last.dataset['uid']!, before: false, beforeUid: null };
+      }
+      return null;
+    }
+    const bounds = card!.getBoundingClientRect();
+    const before = x < bounds.left + bounds.width / 2;
+    const index = org.items.findIndex((i) => i.uid === targetUid);
+    // "After" must skip selected pages: dropBefore refuses a selected target.
+    const next = org.items.slice(index + 1).find((i) => !org.selected.has(i.uid));
+    return { uid: targetUid, before, beforeUid: before ? targetUid : next?.uid ?? null };
+  }
+
+  function updateDropTarget(): void {
+    if (!drag?.active) return;
+    drag.target = dropTargetAt(drag.x, drag.y);
+    for (const card of cards.values()) card.classList.remove('drop-before', 'drop-after');
+    if (drag.target) cards.get(drag.target.uid)?.classList.add(drag.target.before ? 'drop-before' : 'drop-after');
+  }
+
+  function edgeScroll(): void {
+    if (!drag?.active) return;
+    const edge = 65;
+    const amount = drag.y < edge ? -Math.min(20, (edge - drag.y) / 3) :
+      drag.y > window.innerHeight - edge ? Math.min(20, (drag.y - (window.innerHeight - edge)) / 3) : 0;
+    if (amount) { window.scrollBy(0, amount); updateDropTarget(); }
+    drag.frame = window.requestAnimationFrame(edgeScroll);
+  }
+
+  function finishDrag(commit: boolean): void {
+    const previous = drag;
+    if (!previous) return;
+    drag = null;
+    if (previous.frame !== null) window.cancelAnimationFrame(previous.frame);
+    clearDropMarkers();
+    if (!previous.active) return;
+    suppressClickUid = previous.uid;
+    window.setTimeout(() => { if (suppressClickUid === previous.uid) suppressClickUid = null; }, 0);
+    const changed = commit && previous.target ? org.dropBefore(previous.target.beforeUid) : false;
+    dragStatus.textContent = changed ? `Moved ${org.selected.size} page(s).` : 'Page move cancelled or order unchanged.';
+  }
 
   function editSelected(): void {
     const sel = org.selectedItems().find((i) => !i.blank && c.kindOf(i.docId) === 'pdf');
@@ -210,7 +276,8 @@ export function createMerger(ctx: AppContext): Workspace {
     const pos = h('span', { class: 'pos' });
     const src = h('span', { class: 'src' });
     const act = (label: string, title: string, fn: () => void): HTMLButtonElement => button(label, fn, 'btn-icon btn-mini', { title, attrs: { 'aria-label': title } });
-    const card = h('div', { class: 'page-card', attrs: { draggable: true, tabindex: 0, role: 'option', 'data-uid': item.uid } }, thumb,
+    const card = h('div', { class: 'page-card', attrs: { draggable: false, tabindex: 0, role: 'option', 'data-uid': item.uid,
+      'aria-description': 'Drag to reorder. Use Alt and arrow keys to move selected pages.' } }, thumb,
       h('div', { class: 'page-meta' }, pos, src),
       h('div', { class: 'page-actions' },
         act('👁', 'Include or exclude this page', () => { org.selectOnly(item.uid); org.toggleIncluded(); }),
@@ -218,6 +285,7 @@ export function createMerger(ctx: AppContext): Workspace {
         act('⟳', 'Rotate right', () => { org.selectOnly(item.uid); org.rotateSelected(90, c.canRotate); }),
         act('⧉', 'Duplicate this page', () => { org.selectOnly(item.uid); org.duplicateSelected(); })));
     card.addEventListener('click', (e) => {
+      if (suppressClickUid === item.uid) { e.preventDefault(); suppressClickUid = null; return; }
       if ((e.target as HTMLElement).closest('button')) return;
       if (e.shiftKey) org.selectThrough(item.uid); else if (e.ctrlKey || e.metaKey) org.toggleSelect(item.uid); else org.selectOnly(item.uid);
     });
@@ -228,30 +296,27 @@ export function createMerger(ctx: AppContext): Workspace {
       else if (e.key === 'Delete') { e.preventDefault(); if (!org.selected.has(item.uid)) org.selectOnly(item.uid); org.toggleIncluded(); }
       else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { const n = e.key === 'ArrowRight' ? card.nextElementSibling : card.previousElementSibling; (n as HTMLElement | null)?.focus(); }
     });
-    card.addEventListener('dragstart', (e) => {
-      if (!org.selected.has(item.uid)) org.selectOnly(item.uid);
-      e.dataTransfer?.setData('text/plain', 'documaster-pages');
-      if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
-      card.classList.add('dragging');
+    card.addEventListener('pointerdown', (e) => {
+      if (drag || e.button !== 0 || !e.isPrimary || (e.target as HTMLElement).closest('button, input')) return;
+      drag = { uid: item.uid, pointerId: e.pointerId, startX: e.clientX, startY: e.clientY,
+        x: e.clientX, y: e.clientY, active: false, target: null, frame: null };
+      card.setPointerCapture(e.pointerId);
     });
-    card.addEventListener('dragend', () => { card.classList.remove('dragging'); for (const x of cards.values()) x.classList.remove('drop-before', 'drop-after'); });
-    card.addEventListener('dragover', (e) => {
-      if (org.selected.has(item.uid)) return;
-      e.preventDefault();
-      const r = card.getBoundingClientRect();
-      const before = e.clientX < r.left + r.width / 2;
-      card.classList.toggle('drop-before', before);
-      card.classList.toggle('drop-after', !before);
+    card.addEventListener('pointermove', (e) => {
+      if (!drag || drag.pointerId !== e.pointerId || drag.uid !== item.uid) return;
+      drag.x = e.clientX; drag.y = e.clientY;
+      if (!drag.active && Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) >= 7) {
+        drag.active = true;
+        if (!org.selected.has(item.uid)) org.selectOnly(item.uid);
+        for (const uid of org.selected) cards.get(uid)?.classList.add('dragging');
+        dragStatus.textContent = `Moving ${org.selected.size} page(s). Release at the insertion marker.`;
+        drag.frame = window.requestAnimationFrame(edgeScroll);
+      }
+      if (drag.active) { e.preventDefault(); updateDropTarget(); }
     });
-    card.addEventListener('dragleave', () => card.classList.remove('drop-before', 'drop-after'));
-    card.addEventListener('drop', (e) => {
-      e.preventDefault();
-      const before = card.classList.contains('drop-before');
-      card.classList.remove('drop-before', 'drop-after');
-      if (org.selected.has(item.uid)) return;
-      if (before) org.dropBefore(item.uid);
-      else { const next = card.nextElementSibling as HTMLElement | null; org.dropBefore(next?.dataset['uid'] ?? null); }
-    });
+    card.addEventListener('pointerup', (e) => { if (drag?.pointerId === e.pointerId && drag.uid === item.uid) finishDrag(true); });
+    card.addEventListener('pointercancel', (e) => { if (drag?.pointerId === e.pointerId && drag.uid === item.uid) finishDrag(false); });
+    card.addEventListener('lostpointercapture', () => { if (drag?.uid === item.uid) finishDrag(false); });
     cards.set(item.uid, card);
     return card;
   }
@@ -360,14 +425,14 @@ export function createMerger(ctx: AppContext): Workspace {
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); org.redo(); }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') { e.preventDefault(); org.selectAll(); }
   });
-  grid.addEventListener('dragover', (e) => { if (e.target === grid) e.preventDefault(); });
-  grid.addEventListener('drop', (e) => { if (e.target === grid) { e.preventDefault(); org.dropBefore(null); } });
+  window.addEventListener('blur', () => finishDrag(false));
+  grid.addEventListener('keydown', (e) => { if (e.key === 'Escape' && drag) finishDrag(false); });
 
   const el = h('div', { class: 'workspace merger' },
     h('header', { class: 'ws-head' }, h('h1', { text: 'Merger & Page Organizer' }), h('p', { class: 'muted', text: 'Combine documents and arrange their pages: drag to reorder, exclude, duplicate or rotate pages, then merge. PDF pages are copied unchanged.' })),
     h('div', { class: 'two-col merger-cols' },
       h('div', { class: 'col' }, dz.el, c.set.picker(), sectionTitle('Files', button('Clear', () => void c._clear_merge_files(), 'btn-small')), fileList, optionsBox, prog.el, resultBox),
-      h('div', { class: 'col wide' }, sectionTitle('Pages', status), toolbar, notices, grid)));
+      h('div', { class: 'col wide' }, sectionTitle('Pages', status), dragStatus, toolbar, notices, grid)));
   renderOptions();
   render();
   return {

@@ -115,6 +115,17 @@ class PdfOpTests(unittest.TestCase):
         self.op({"op": "remove_annotations", "selectors": [{"page": 0, "index": 0}]})
         self.assertEqual(len(self.h.call("GET", f"/api/documents/{self.d['id']}/pdfinfo")["annotations"]), 2)
 
+    def test_comment_text_can_be_edited_and_undone(self):
+        self.op({"op": "annotate", "annotations": [{"type": "note", "page": 1, "point": [0.4, 0.4], "text": "Review this"}]})
+        original = self.h.call("GET", f"/api/documents/{self.d['id']}/pdfinfo")["annotations"][0]
+        result = self.op({"op": "edit_note", "selector": {"id": original["id"]}, "text": "Approved with changes"})
+        self.assertTrue(result["changed"])
+        updated = self.h.call("GET", f"/api/documents/{self.d['id']}/pdfinfo")["annotations"][0]
+        self.assertEqual(updated["id"], original["id"])
+        self.assertEqual(updated["text"], "Approved with changes")
+        self.h.call("POST", f"/api/documents/{self.d['id']}/undo")
+        self.assertEqual(self.h.call("GET", f"/api/documents/{self.d['id']}/pdfinfo")["annotations"][0]["text"], "Review this")
+
     def test_every_annotation_kind_is_written_with_an_appearance_so_viewers_draw_it(self):
         specs = [{"type": "underline", "page": 1, "rects": [[0.1, 0.1, 0.4, 0.13]]}, {"type": "strikeout", "page": 1, "rects": [[0.1, 0.2, 0.4, 0.23]]},
                  {"type": "ellipse", "page": 2, "rect": [0.2, 0.2, 0.5, 0.4]},

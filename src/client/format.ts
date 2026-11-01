@@ -69,3 +69,13 @@ export function formatRanges(pages: number[]): string {
 export function plural(n: number, one: string, many = `${one}s`): string {
   return `${formatNumber(n)} ${n === 1 ? one : many}`;
 }
+
+/** Spreadsheet-safe UTF-8 CSV. Imported document text is treated as data, never as a formula. */
+export function toCsv(rows: readonly (readonly (string | number | null | undefined)[])[]): string {
+  const cell = (value: string | number | null | undefined): string => {
+    let text = String(value ?? '');
+    if (/^[\s\u0000-\u001f]*[=+@-]/.test(text)) text = `'${text}`;
+    return `"${text.replace(/"/g, '""')}"`;
+  };
+  return '\uFEFF' + rows.map((row) => row.map(cell).join(',')).join('\r\n') + '\r\n';
+}

@@ -96,6 +96,18 @@ def main() -> int:
             pg.wait_for_selector(".page-card", timeout=20000)
             pg.wait_for_timeout(800)
             check(pg.locator(".page-card").count() == 3, "merger shows every page as a card")
+            # Exercise a real pointer gesture, not just Organizer.dropBefore or keyboard shortcuts.
+            origin = pg.locator(".page-card").nth(2).locator(".page-thumb").bounding_box()
+            target = pg.locator(".page-card").nth(0).bounding_box()
+            pg.mouse.move(origin["x"] + origin["width"] / 2, origin["y"] + origin["height"] / 2)
+            pg.mouse.down()
+            pg.mouse.move(target["x"] + target["width"] / 4, target["y"] + target["height"] / 2, steps=12)
+            pg.mouse.up()
+            check("sample.docx" in pg.locator(".page-card").first.locator(".src").inner_text(),
+                  "pointer dragging moves the chosen page to the first position")
+            pg.click("button[data-act=undo]")
+            check("sample.pdf" in pg.locator(".page-card").first.locator(".src").inner_text(),
+                  "pointer drag order is undoable")
             pg.click(".page-card >> nth=1")
             pg.keyboard.press("Alt+ArrowUp")
             pg.wait_for_timeout(200)
@@ -168,6 +180,11 @@ def main() -> int:
             body = pg.inner_text(".reader")
             check("jane.doe@example.com" in body and "NL91" in body, "personal data is listed with what was found")
             pg.screenshot(path=str(shots / "reader_pii.png"))
+            pg.click(".reader .tab[data-tab=overview]")
+            with pg.expect_download() as report:
+                pg.click("button:has-text('Export full analysis (JSON)')")
+            check(b'"schema": "documaster.analysis.v1"' in Path(report.value.path()).read_bytes(),
+                  "Reader exports a structured local analysis report")
 
             # ---- Assistant
             pg.click("a[data-ws=assistant]")
