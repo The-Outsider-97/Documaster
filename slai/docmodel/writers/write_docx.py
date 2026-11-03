@@ -109,7 +109,8 @@ def write_docx(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
             else:
                 run.text = text or ""
 
-    def fill_template(paragraph: Any, template: str) -> None:
+    def fill_template(paragraph: Any, template: str, props: dict[str, Any] | None = None) -> None:
+        start = len(paragraph.runs)
         template = template.replace("{{", "\x01").replace("}}", "\x02")
         for token in re.split(r"(\{page\}|\{pages\}|\{title\})", template):
             if token == "{page}":
@@ -120,6 +121,17 @@ def write_docx(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
                 paragraph.add_run(clean(opts.title or doc_model["title"]))
             elif token:
                 paragraph.add_run(clean(token.replace("\x01", "{").replace("\x02", "}")))
+        for run in paragraph.runs[start:]:
+            props = props or {}
+            if props.get("font_family"):
+                run.font.name = props["font_family"]
+            if props.get("font_size_pt"):
+                run.font.size = Pt(props["font_size_pt"])
+            if props.get("color"):
+                run.font.color.rgb = RGBColor.from_string(props["color"].lstrip("#"))
+            for key in ("bold", "italic", "underline"):
+                if key in props:
+                    setattr(run, key, props[key])
 
     def apply_header_footer(docx_section: Any, model_section: dict[str, Any] | None, setup: PageSetup) -> None:
         for edge, part in (("header", docx_section.header), ("footer", docx_section.footer)):
@@ -136,13 +148,22 @@ def write_docx(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
             width = Mm(text_width_mm(setup))
             paragraph.paragraph_format.tab_stops.add_tab_stop(int(width / 2), WD_TAB_ALIGNMENT.CENTER)
             paragraph.paragraph_format.tab_stops.add_tab_stop(int(width), WD_TAB_ALIGNMENT.RIGHT)
-            fill_template(paragraph, template.get("left", ""))
+            def fill_position(pos: str) -> None:
+                rich = (template.get("runs") or {}).get(pos)
+                fallback = (template.get("formats") or {}).get(pos, {})
+                if rich and "".join(x["text"] for x in rich) == template.get(pos, ""):
+                    for fragment in rich:
+                        fill_template(paragraph, fragment["text"], {**fallback, **fragment.get("format", {})})
+                else:
+                    fill_template(paragraph, template.get(pos, ""), fallback)
+            fill_position("left")
             paragraph.add_run("\t")
-            fill_template(paragraph, template.get("center", ""))
+            fill_position("center")
             paragraph.add_run("\t")
-            fill_template(paragraph, template.get("right", ""))
+            fill_position("right")
             for r in paragraph.runs:
-                r.font.size = Pt(9)
+                if r.font.size is None:
+                    r.font.size = Pt(9)
 
     first_model = sections.get(section_order[0]) if section_order else None
     setup = effective_setup(first_model)
@@ -369,7 +390,7 @@ def write_docx(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
                 cap.paragraph_format.keep_with_next = True
                 if has_page_break(block):
                     cap.paragraph_format.page_break_before = True
-            _docx_table(document, block, style_exists, qn, OxmlElement, WD_TABLE_ALIGNMENT, WD_ALIGN_PARAGRAPH, Pt)
+            _docx_table(document, block, style_exists, qn, OxmlElement, WD_TABLE_ALIGNMENT, WD_ALIGN_PARAGRAPH, Pt, style_run)
             document.add_paragraph()
         elif t == "figure":
             _docx_figure(document, package, block, body_width_mm[0], style_exists, qn, Mm, WD_ALIGN_PARAGRAPH, warnings)
@@ -404,7 +425,7 @@ def write_docx(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
 
 
 def _docx_table(document: Any, block: dict[str, Any], style_exists: Any, qn: Any, OxmlElement: Any,
-                WD_TABLE_ALIGNMENT: Any, WD_ALIGN_PARAGRAPH: Any, Pt: Any) -> None:
+                WD_TABLE_ALIGNMENT: Any, WD_ALIGN_PARAGRAPH: Any, Pt: Any, style_run: Any) -> None:
     grid = table_grid(block["table"])
     table = document.add_table(rows=len(grid.rows), cols=grid.columns)
     if style_exists("Table Grid"):
@@ -419,9 +440,9 @@ def _docx_table(document: Any, block: dict[str, Any], style_exists: Any, qn: Any
             target = table.cell(r, c)
             target.text = ""
             para = target.paragraphs[0]
-            run = para.add_run(clean(cell["text"]))
-            if r < grid.header_rows or cell.get("header"):
-                run.bold = True
+            for segment, props in span_segments(cell["text"], cell.get("spans")):
+                run = para.add_run(clean(segment))
+                style_run(run, props, {"bold": bool(r < grid.header_rows or cell.get("header"))})
             align = cell.get("align")
             if align:
                 para.alignment = {"left": WD_ALIGN_PARAGRAPH.LEFT, "center": WD_ALIGN_PARAGRAPH.CENTER,

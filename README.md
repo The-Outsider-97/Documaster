@@ -32,6 +32,28 @@ python3 -m slai --output-dir D:\Documents\Out --port 8766 --no-browser
 
 Results are written to the output folder (default: a `Documaster` folder under your documents); existing files are never overwritten.
 
+### Keeping document formatting on import
+
+DOCX → SLDC now retains the editable paragraph/font formatting, page setup,
+headers/footers (including individual font runs and dynamic page-number fields),
+and rich-text table cells that Word stores explicitly. Some Word layout features,
+such as floating shapes and text boxes, still require further support.
+
+PDF → SLDC is necessarily approximate: PDF pages do not normally contain
+editable paragraph, table or header/footer structures. For higher-quality
+reconstruction of positioned text, font sizes, colors, table grids and repeated
+page furniture, Documaster **optionally** uses PyMuPDF:
+
+```powershell
+python -m pip install "PyMuPDF>=1.24"
+```
+
+**Licensing:** PyMuPDF is offered under AGPL and commercial licensing. Review
+the [official license](https://pymupdf.io/licensing) before distributing it with
+SLAI or using it in proprietary software. It is not installed by the base
+requirements. If absent, the original pypdf/OCR text import remains available
+and its fidelity limitations are reported.
+
 To rebuild the client (needs Node.js and TypeScript: `npm i`):
 
 ```bash

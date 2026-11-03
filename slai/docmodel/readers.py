@@ -6,8 +6,8 @@ Which engine parses each format, and why:
 format engine                                                   reason
 ====== ======================================================== =====================================================
 sldc   ``src.utils.sldc.read_package``                          authoritative
-pdf    pypdf, page by page                                      Reader's PDF parser returns one string (no pages, no
-                                                                passwords); Documaster needs page-addressable text
+pdf    pypdf + PyMuPDF where installed                         Page-addressable text, fonts, geometry and table detection;
+                                                                plain-text fallback without the optional layout engine
 docx   python-docx (Reader ``ParserEngine`` as fallback)        Reader keeps body text only; structure is needed
 odt    Documaster (zipfile + XML)                               Reader has no ODT parser
 html   Documaster (``html.parser``)                             Reader flattens HTML to text
@@ -240,6 +240,27 @@ def _read_pdf(path: Path, svc: Services, password: str | None, name: str, ocr: b
             except DependencyMissing as exc:
                 warnings.append(f"Page {index + 1}: OCR failed ({exc.message})")
         page_texts.append(text)
+    if not ocr_pages and not failed:
+        # A positioned-text parser can preserve substantially more than the
+        # pypdf plain-text fallback; its output is still explicitly best-effort.
+        try:
+            from .read_pdf_layout import read_pdf_layout
+            layout = read_pdf_layout(path, name, password)
+        except (OSError, ValueError, RuntimeError, TypeError) as exc:
+            layout = None
+            warnings.append(f"Positioned PDF layout extraction failed ({exc}); using plain-text import")
+        if layout and layout["blocks"]:
+            meta = reader.metadata
+            title = str(getattr(meta, "title", "") or "").strip() if meta else ""
+            author = str(getattr(meta, "author", "") or "").strip() if meta else ""
+            sample = " ".join(b["text"] for b in layout["blocks"][:200])
+            lang_guess = textstats.detect_language(sample)
+            pub = {"authors": [author[:200]]} if author else None
+            pkg = build_package(title or Path(name).stem, layout["blocks"],
+                                sections=layout["sections"], language=textstats.sldc_language(lang_guess["code"]),
+                                publication=pub)
+            return IRResult(pkg, "PyMuPDF positioned PDF layout", warnings=warnings + layout["warnings"],
+                            features=layout["features"], dropped=layout["dropped"], pages=count)
     reference = line_width_reference(page_texts)
     for index, text in enumerate(page_texts):
         control.report(0.8 + index / max(count, 1) * 0.2, f"Structuring page {index + 1} of {count}")
@@ -284,12 +305,14 @@ def _read_docx(path: Path, svc: Services, name: str) -> IRResult:
     if svc.tools.has("docx"):
         data = read_docx(str(path))
         pkg = build_package(data["title"] or Path(name).stem, data["blocks"], assets=data["assets"],
+                            sections=data.get("sections"),
                             publication={"authors": [data["author"][:200]]} if data["author"] else None)
         _fix_language(pkg)
         return IRResult(pkg, "python-docx", warnings=data["warnings"],
-                        features=["headings", "paragraphs", "lists", "tables incl. merged cells", "bold/italic/underline/strike",
-                                  "hyperlinks", "page breaks", "inline images"],
-                        dropped=data["dropped"] + ["fonts, sizes and colours", "page setup", "text boxes and shapes"])
+                        features=["headings", "paragraphs and alignment/spacing", "lists", "tables incl. merged cells",
+                                  "font family/size/colour", "bold/italic/underline/strike", "hyperlinks", "page breaks",
+                                  "page size and margins", "headers and footers", "inline images"],
+                        dropped=data["dropped"] + ["text boxes and shapes"])
     # fallback: Reader's DOCX text (no structure)
     return _read_text_like(path, svc, name, markdown=False,
                            extra_warning="python-docx is not installed, so only the body text was read "

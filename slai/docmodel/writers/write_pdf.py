@@ -226,6 +226,8 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
                     xml = f"<{tag}>{xml}</{tag}>"
             if merged.get("color"):
                 xml = f'<font color="{merged["color"]}">{xml}</font>'
+            if merged.get("font_size_pt"):
+                xml = f'<font size="{float(merged["font_size_pt"]):g}">{xml}</font>'
             if merged.get("background"):
                 xml = f'<span backColor="{merged["background"]}">{xml}</span>'
             if props.get("href"):
@@ -404,10 +406,9 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
                 style = st_cell
                 if cell.get("align"):
                     style = ParagraphStyle("cellx", parent=st_cell, alignment=ALIGN[cell["align"]])
+                xml = inline({"text": text, "spans": cell.get("spans", [])})
                 if r < grid.header_rows or cell.get("header"):
-                    xml = f"<b>{markup_text(text, False)}</b>"
-                else:
-                    xml = markup_text(text, False)
+                    xml = f"<b>{xml}</b>"
                 line.append(Paragraph(xml, style))
                 if cell.get("colspan", 1) == 1:
                     longest = max([len(w) for w in text.split()] + [1])
@@ -617,25 +618,36 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
                     template = {"center": "{page}"}
                 if not template:
                     continue
-                texts = []
+                def replace_fields(raw: str) -> str:
+                    return raw.replace("{{", "\x01").replace("}}", "\x02").replace("{page}", label or "").replace("{pages}", str(total)) \
+                        .replace("{title}", title).replace("\x01", "{").replace("\x02", "}")
+                y = ph - (s.top * MM) / 2 - 3 if edge == "header" else (s.bottom * MM) / 2 - 3
                 for pos in ("left", "center", "right"):
                     raw = template.get(pos, "")
-                    raw = raw.replace("{{", "\x01").replace("}}", "\x02").replace("{page}", label or "").replace("{pages}", str(total)) \
-                        .replace("{title}", title).replace("\x01", "{").replace("\x02", "}")
-                    texts.append(raw)
-                y = ph - (s.top * MM) / 2 - 3 if edge == "header" else (s.bottom * MM) / 2 - 3
-                self.setFont(body_font, 8.5)
-                self.setFillColor(colors.HexColor("#555555"))
-                for pos, text in zip(("left", "center", "right"), texts):
-                    if not text:
+                    if not raw:
                         continue
-                    draw = "".join(ch if (ord(ch) in cover_body or ch.isspace()) else "?" for ch in text)
-                    if pos == "left":
-                        self.drawString(s.left * MM, y, draw)
-                    elif pos == "center":
-                        self.drawCentredString(pw / 2, y, draw)
-                    else:
-                        self.drawRightString(pw - s.right * MM, y, draw)
+                    fallback = (template.get("formats") or {}).get(pos, {})
+                    rich = (template.get("runs") or {}).get(pos) or []
+                    fragments = rich if rich and "".join(r["text"] for r in rich) == raw else [{"text": raw}]
+                    drawn: list[tuple[str, str, float, str, float]] = []
+                    for fragment in fragments:
+                        props = {**fallback, **fragment.get("format", {})}
+                        weight, italic = bool(props.get("bold")), bool(props.get("italic"))
+                        face = (("DMBody-" + ("BI" if weight and italic else "B" if weight else "I" if italic else "R"))
+                                if body_font.startswith("DMBody-") else ("Helvetica-BoldOblique" if weight and italic else "Helvetica-Bold" if weight else
+                                                   "Helvetica-Oblique" if italic else "Helvetica"))
+                        size = max(4.0, min(400.0, float(props.get("font_size_pt") or 8.5)))
+                        text = replace_fields(fragment["text"])
+                        printable = "".join(ch if (ord(ch) in cover_body or ch.isspace()) else "?" for ch in text)
+                        width = pdfmetrics.stringWidth(printable, face, size)
+                        drawn.append((printable, face, size, props.get("color", "#555555"), width))
+                    total_width = sum(fragment[4] for fragment in drawn)
+                    x = s.left * MM if pos == "left" else pw / 2 - total_width / 2 if pos == "center" else pw - s.right * MM - total_width
+                    for printable, face, size, color, width in drawn:
+                        self.setFont(face, size)
+                        self.setFillColor(colors.HexColor(color))
+                        self.drawString(x, y, printable)
+                        x += width
 
     # ---------------------------------------------------------------- build
     buffer = io.BytesIO()
