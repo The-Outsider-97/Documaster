@@ -61,6 +61,10 @@ def build_package(title: str, blocks: list[dict[str, Any]], *, language: str = "
     package = sldc().new_package(clean, blocks, language=language, assets=assets, styles=styles,
                                  sections=sections, references=references, publication=publication,
                                  provenance=provenance, metadata=metadata)
+    # Imports can include 1.1 page bands, layout attributes and font-run fields.
+    # SLDC explicitly rejects these on a package that still claims version 1.0.
+    if set(sldc()._required_features(package.document)) - sldc().REQUIRED_FEATURES:
+        package.version = sldc().LATEST_KNOWN_VERSION
     return package
 
 

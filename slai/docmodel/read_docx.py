@@ -1,8 +1,7 @@
-"""DOCX -> document model with python-docx: headings, paragraphs, lists, tables (merged cells), inline formatting,
-hyperlinks, page breaks, inline PNG/JPEG/GIF images, core properties.
+"""Structure-aware DOCX -> SLDC import, including page geometry and typography.
 
-Not imported (reported in ``dropped``): headers/footers, footnotes/endnotes, comments, tracked-change authorship,
-text boxes, fields' cached results beyond their visible text, fonts/sizes/colours, page setup, drawing shapes.
+Only representable, explicit formatting is imported. Unsupported Word constructs
+are reported rather than silently flattened into misleading SLDC structures.
 """
 from __future__ import annotations
 
@@ -23,6 +22,180 @@ _HEADING = re.compile(r"^(?:heading|kop|überschrift|titre|encabezado|título)\s
 _IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif"}
 
 
+def _mm(length: Any) -> float | None:
+    return round(float(length.mm), 3) if length is not None else None
+
+
+def _run_properties(run: Any, paragraph: Any = None) -> dict[str, Any]:
+    """Resolve direct, character-style and paragraph-style formatting, if known."""
+    sources = [getattr(run, "font", None)]
+    if getattr(run, "style", None) is not None:
+        sources.append(run.style.font)
+    if paragraph is not None and getattr(paragraph, "style", None) is not None:
+        sources.append(paragraph.style.font)
+    out: dict[str, Any] = {}
+    for name, attr in (("font_family", "name"), ("font_size_pt", "size"),
+                       ("bold", "bold"), ("italic", "italic"), ("underline", "underline"),
+                       ("strike", "strike"), ("superscript", "superscript"),
+                       ("subscript", "subscript")):
+        for font in sources:
+            value = getattr(font, attr, None) if font is not None else None
+            if value is None:
+                continue
+            if name == "font_size_pt":
+                value = round(float(value.pt), 2)
+                if not 4 <= value <= 400:
+                    continue
+            elif name == "font_family":
+                if not isinstance(value, str) or not value.strip() or len(value) > 100 or re.search(r'[\x00-\x1f\x7f{};<>\\"\x27`]', value):
+                    continue
+            elif name in ("bold", "italic", "underline", "strike", "superscript", "subscript"):
+                value = bool(value)
+            out[name] = value
+            break
+    for font in sources:
+        color = getattr(getattr(font, "color", None), "rgb", None) if font is not None else None
+        if color is not None:
+            out["color"] = f"#{str(color)}".lower()
+            break
+    return out
+
+
+def _paragraph_properties(paragraph: Any) -> dict[str, Any]:
+    pf = paragraph.paragraph_format
+    style_pf = paragraph.style.paragraph_format if paragraph.style is not None else None
+    attrs: dict[str, Any] = {}
+    align = paragraph.alignment
+    if align is None and style_pf is not None:
+        align = style_pf.alignment
+    if align is not None:
+        mapped = {0: "left", 1: "center", 2: "right", 3: "justify"}.get(int(align))
+        if mapped:
+            attrs["align"] = mapped
+    for key, attr in (("space_before_pt", "space_before"), ("space_after_pt", "space_after")):
+        value = getattr(pf, attr, None)
+        if value is None and style_pf is not None:
+            value = getattr(style_pf, attr, None)
+        if value is not None and 0 <= value.pt <= 2000:
+            attrs[key] = round(float(value.pt), 2)
+    for key, attr in (("indent_mm", "left_indent"), ("first_line_indent_mm", "first_line_indent")):
+        value = getattr(pf, attr, None)
+        if value is None and style_pf is not None:
+            value = getattr(style_pf, attr, None)
+        minimum = -100 if key == "first_line_indent_mm" else 0
+        if value is not None and minimum <= value.mm <= 500:
+            attrs[key] = _mm(value)
+    spacing = pf.line_spacing
+    if spacing is None and style_pf is not None:
+        spacing = style_pf.line_spacing
+    if isinstance(spacing, (int, float)) and .5 <= spacing <= 5:
+        attrs["line_height"] = round(float(spacing), 3)
+    return attrs
+
+
+def _header_field_text(paragraph: Any) -> str:
+    """Keep dynamic PAGE/NUMPAGES/TITLE fields instead of their cached numbers."""
+    out: list[str] = []
+    in_field = False
+    field_instr = ""
+    for run in paragraph._p.iter("{%s}r" % _NS["w"]):
+        for part in run:
+            if part.tag == _W + "fldChar":
+                kind = part.get(_W + "fldCharType")
+                if kind == "begin":
+                    in_field, field_instr = True, ""
+                elif kind == "separate":
+                    cmd = field_instr.strip().split(" ")[0].upper()
+                    out.append({"PAGE": "{page}", "NUMPAGES": "{pages}", "TITLE": "{title}"}.get(cmd, ""))
+                elif kind == "end":
+                    in_field = False
+            elif part.tag == _W + "instrText" and in_field:
+                field_instr += part.text or ""
+            elif part.tag == _W + "t" and not in_field:
+                out.append(part.text or "")
+            elif part.tag == _W + "tab" and not in_field:
+                out.append("\t")
+    return "".join(out)
+
+
+def _header_template(part: Any) -> dict[str, Any]:
+    if not part.paragraphs:
+        return {}
+    template: dict[str, Any] = {}
+    formats: dict[str, Any] = {}
+    rich: dict[str, list[dict[str, Any]]] = {}
+    for paragraph in part.paragraphs:
+        text = _header_field_text(paragraph)
+        if not text.strip():
+            continue
+        segments = text.split("\t")
+        if len(segments) >= 3:
+            fields = dict(zip(("left", "center", "right"),
+                              (segments[0], "\t".join(segments[1:-1]), segments[-1])))
+        else:
+            align = paragraph.alignment
+            pos = {1: "center", 2: "right"}.get(int(align) if align is not None else 0, "left")
+            fields = {pos: text}
+        for pos, value in fields.items():
+            if value.strip():
+                template[pos] = (template.get(pos, "") + ("\n" if pos in template else "") + value).strip()[:500]
+                for run in paragraph.runs:
+                    if run.text.strip():
+                        props = _run_properties(run, paragraph)
+                        formats[pos] = {k: v for k, v in props.items()
+                                        if k in {"font_family", "font_size_pt", "color", "bold", "italic", "underline"}}
+                        break
+        # For literal text we can preserve independently styled runs. Word
+        # fields are processed separately because their visible cached result
+        # must not be mistaken for persistent user-authored text.
+        if "{" not in text and "}" not in text:
+            field_index = 0
+            for run in paragraph.runs:
+                chunks = run.text.split("\t")
+                for k, chunk in enumerate(chunks):
+                    if k:
+                        field_index += 1
+                    if not chunk:
+                        continue
+                    if len(segments) >= 3:
+                        pos = ("left", "center", "right")[min(field_index, 2)]
+                    else:
+                        pos = next(iter(fields))
+                    props = _run_properties(run, paragraph)
+                    style = {key: value for key, value in props.items()
+                             if key in {"font_family", "font_size_pt", "color", "bold", "italic", "underline"}}
+                    rich.setdefault(pos, []).append({"text": chunk, **({"format": style} if style else {})})
+    if formats:
+        template["formats"] = formats
+    matching = {pos: runs for pos, runs in rich.items()
+                if "".join(r["text"] for r in runs) == template.get(pos, "") and len(runs) <= 200}
+    if matching:
+        template["runs"] = matching
+    return template
+
+
+def _document_sections(document: Any) -> list[dict[str, Any]]:
+    sections = []
+    for index, section in enumerate(document.sections):
+        page = {"width_mm": _mm(section.page_width), "height_mm": _mm(section.page_height),
+                "margins_mm": {name: _mm(getattr(section, name + "_margin")) for name in ("left", "right", "top", "bottom")},
+                "header_mm": _mm(section.header_distance), "footer_mm": _mm(section.footer_distance)}
+        for key, value in list(page["margins_mm"].items()):
+            if value is None:
+                page["margins_mm"].pop(key)
+        if page["width_mm"] is None or page["height_mm"] is None:
+            page = {"size": "A4"}
+        else:
+            page = {key: value for key, value in page.items() if value is not None}
+        model: dict[str, Any] = {"id": f"import_section_{index + 1}", "page": page}
+        for edge in ("header", "footer"):
+            template = _header_template(getattr(section, edge))
+            if template:
+                model[edge] = template
+        sections.append(model)
+    return sections
+
+
 def read_docx(path: str) -> dict[str, Any]:
     try:
         import docx  # type: ignore
@@ -40,6 +213,8 @@ def read_docx(path: str) -> dict[str, Any]:
     warnings: list[str] = []
     seen_assets: dict[str, str] = {}
     state = {"break": False, "images": 0, "skipped_images": 0}
+    sections = _document_sections(document)
+    current_section = 0
 
     def add_asset(blob: bytes) -> str | None:
         if len(blob) > 8 * 1024 * 1024 or len(assets) >= 200:
@@ -85,19 +260,7 @@ def read_docx(path: str) -> dict[str, Any]:
                 href = url if re.match(r"^(https?://|mailto:)", url, re.I) and len(url) < 2000 else None
                 runs = list(item.runs)
             for run in runs:
-                props: dict[str, Any] = {}
-                if run.bold:
-                    props["bold"] = True
-                if run.italic:
-                    props["italic"] = True
-                if run.underline:
-                    props["underline"] = True
-                if run.font.strike:
-                    props["strike"] = True
-                if run.font.superscript:
-                    props["superscript"] = True
-                elif run.font.subscript:
-                    props["subscript"] = True
+                props = _run_properties(run, paragraph)
                 if _has_page_break(run):
                     state["break"] = True
                 pieces = _run_pieces(run)
@@ -152,17 +315,17 @@ def read_docx(path: str) -> dict[str, Any]:
                      for s in spans if s["end"] - lead > 0 and s["start"] - lead < len(stripped)]
             spans = [s for s in spans if s["start"] < s["end"]]
             heading = _HEADING.match(style_name.strip())
-            attrs: dict[str, Any] = {}
+            attrs: dict[str, Any] = _paragraph_properties(paragraph)
             kind = "paragraph"
             if heading:
-                kind, attrs = "heading", {"level": max(1, min(6, int(heading.group(1))))}
+                kind, attrs["level"] = "heading", max(1, min(6, int(heading.group(1))))
             elif style_name.lower() in ("title", "titel", "titre"):
-                kind, attrs = "heading", {"level": 1}
+                kind, attrs["level"] = "heading", 1
             elif style_name.lower() in ("subtitle", "ondertitel", "sous-titre"):
-                kind, attrs = "heading", {"level": 2}
+                kind, attrs["level"] = "heading", 2
             elif _is_list(paragraph, style_name):
                 ordered = bool(re.search(r"number|numer|nummer|num", style_name, re.I)) or _numbering_is_ordered(document, paragraph)
-                kind, attrs = "list_item", {"ordered": ordered}
+                kind, attrs["ordered"] = "list_item", ordered
                 depth = _list_depth(paragraph, style_name)
                 if depth:
                     attrs["depth"] = depth
@@ -170,14 +333,10 @@ def read_docx(path: str) -> dict[str, Any]:
                 kind = "quote"
             elif re.search(r"^(code|source code|preformatted|plain text)", style_name, re.I):
                 kind = "code"
-            alignment = paragraph.alignment
-            if alignment is not None and kind == "paragraph":
-                name = {0: "left", 1: "center", 2: "right", 3: "justify"}.get(int(alignment))
-                if name and name != "left":
-                    attrs["align"] = name
             if pf_break:
                 state["break"] = True
             block = sldc().make_block(kind, stripped, attributes=attrs or None, spans=spans or None)
+            block["section"] = sections[min(current_section, len(sections) - 1)]["id"]
             push(block)
         elif pf_break:
             state["break"] = True
@@ -196,13 +355,18 @@ def read_docx(path: str) -> dict[str, Any]:
         for tr in table._tbl.tr_lst[:1]:
             if tr.trPr is not None and tr.trPr.find("{%s}tblHeader" % _NS["w"]) is not None:
                 header_rows = 1
-        push(sldc().make_table(rows, header_rows=header_rows, columns=columns))
+        block = sldc().make_table(rows, header_rows=header_rows, columns=columns)
+        block["section"] = sections[min(current_section, len(sections) - 1)]["id"]
+        push(block)
 
     body = document.element.body
     for child in body.iterchildren():
         tag = child.tag
         if tag == _W + "p":
             paragraph_block(Paragraph(child, document))
+            ppr = child.find(_W + "pPr")
+            if ppr is not None and ppr.find(_W + "sectPr") is not None:
+                current_section = min(current_section + 1, len(sections) - 1)
         elif tag == _W + "tbl":
             table_block(Table(child, document))
 
@@ -214,12 +378,15 @@ def read_docx(path: str) -> dict[str, Any]:
     if any("comments" in n for n in names):
         dropped.append("review comments")
     if any(re.search(r"/(header|footer)\d*\.xml$", n) for n in names):
-        dropped.append("headers and footers")
+        warnings.append("Rich text and page-variant header/footer formatting may need manual review")
     if state["skipped_images"]:
         dropped.append(f"{state['skipped_images']} image(s) in unsupported formats or over the size limit")
     core = document.core_properties
     title = (core.title or "").strip()
-    return {"blocks": blocks, "assets": assets, "title": title, "author": (core.author or "").strip(),
+    if document.settings.odd_and_even_pages_header_footer or any(s.different_first_page_header_footer for s in document.sections):
+        dropped.append("different first-page or odd/even headers and footers (not yet supported by SLDC 1.x)")
+    return {"blocks": blocks, "assets": assets, "sections": sections,
+            "title": title, "author": (core.author or "").strip(),
             "language": None, "dropped": dropped, "warnings": warnings, "images": state["images"]}
 
 
@@ -283,7 +450,36 @@ def _table_rows(table: Table) -> list[list[dict[str, Any]]]:
     for tr in table._tbl.tr_lst:
         cells = []
         for tc in tr.tc_lst:
-            text = "\n".join(p.text for p in _cell_paragraphs(tc)).strip().replace(" ", " ")
+            pieces: list[str] = []
+            cell_spans: list[dict[str, Any]] = []
+            align = None
+            for paragraph in _cell_paragraphs(tc):
+                if pieces:
+                    pieces.append("\n")
+                start = sum(len(piece) for piece in pieces)
+                para_text = paragraph.text.replace(" ", " ")
+                pieces.append(para_text)
+                cursor = 0
+                for run in paragraph.runs:
+                    segment = run.text.replace(" ", " ")
+                    if not segment:
+                        continue
+                    local = para_text.find(segment, cursor)
+                    if local < 0:
+                        continue
+                    props = _run_properties(run)
+                    if props:
+                        cell_spans.append({"type": "format", "start": start + local,
+                                           "end": start + local + len(segment), **props})
+                    cursor = local + len(segment)
+                if align is None and paragraph.alignment is not None:
+                    align = {0: "left", 1: "center", 2: "right", 3: "justify"}.get(int(paragraph.alignment))
+            original = "".join(pieces)
+            text = original.strip()
+            lead = len(original) - len(original.lstrip())
+            cell_spans = [{**s, "start": max(0, s["start"] - lead), "end": min(len(text), s["end"] - lead)}
+                          for s in cell_spans if s["end"] > lead and s["start"] - lead < len(text)]
+            cell_spans.sort(key=lambda s: (s["start"], s["end"], s["type"]))
             tc_pr = tc.tcPr
             span = 1
             vmerge = None
@@ -294,7 +490,8 @@ def _table_rows(table: Table) -> list[list[dict[str, Any]]]:
                 vm = tc_pr.find("{%s}vMerge" % _NS["w"])
                 if vm is not None:
                     vmerge = vm.get("{%s}val" % _NS["w"]) or "continue"
-            cells.append({"text": text, "span": span, "vmerge": vmerge})
+            cells.append({"text": text, "span": span, "vmerge": vmerge,
+                          **({"spans": cell_spans} if cell_spans else {}), **({"align": align} if align else {})})
         raw.append(cells)
     # column index of every cell, then rowspans from vMerge chains
     grid_rows: list[list[tuple[int, dict[str, Any]]]] = []
@@ -312,6 +509,9 @@ def _table_rows(table: Table) -> list[list[dict[str, Any]]]:
             if cell["vmerge"] == "continue":
                 continue
             item: dict[str, Any] = {"text": cell["text"]}
+            for key in ("spans", "align"):
+                if key in cell:
+                    item[key] = cell[key]
             if cell["span"] > 1:
                 item["colspan"] = cell["span"]
             if cell["vmerge"] == "restart":
