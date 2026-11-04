@@ -1,0 +1,243 @@
+"""Render SLDC's inert slai.writer.shape extension as native PDF paths.
+
+This module is a Documaster export adapter, never a document editor. It does
+not execute arbitrary SVG/HTML. Only fixed geometric presets are accepted.
+PDF supports vector paths and searchable PDF text. Blurred shadows are
+approximated by bounded, translucent vector layers, explicitly warned about.
+"""
+from __future__ import annotations
+
+from html import escape
+from math import cos, pi, sin
+from typing import Any
+
+SHAPE_KEY = "slai.writer.shape"
+_KINDS = frozenset({"rectangle", "ellipse", "line", "triangle", "diamond",
+                    "pentagon", "hexagon", "star", "arrow", "plus"})
+MM = 72 / 25.4
+
+
+def supported(block: dict[str, Any]) -> bool:
+    shape = (block.get("extensions") or {}).get(SHAPE_KEY)
+    return (block.get("type") == "paragraph" and isinstance(shape, dict)
+            and shape.get("version") == 1 and shape.get("kind") in _KINDS
+            and isinstance(shape.get("width_mm"), (int, float))
+            and isinstance(shape.get("height_mm"), (int, float))
+            and 2 <= shape["width_mm"] <= 1000
+            and 2 <= shape["height_mm"] <= 1000)
+
+
+def _vertices(kind: str) -> list[tuple[float, float]]:
+    if kind == "triangle":
+        return [(50, 0), (100, 100), (0, 100)]
+    if kind == "diamond":
+        return [(50, 0), (100, 50), (50, 100), (0, 50)]
+    if kind == "arrow":
+        return [(0, 30), (62, 30), (62, 5), (100, 50),
+                (62, 95), (62, 70), (0, 70)]
+    if kind == "plus":
+        return [(35, 0), (65, 0), (65, 35), (100, 35), (100, 65),
+                (65, 65), (65, 100), (35, 100), (35, 65), (0, 65), (0, 35), (35, 35)]
+    if kind == "star":
+        return [(50 + (22 if i % 2 else 50) * cos(-pi / 2 + i * pi / 5),
+                 50 + (22 if i % 2 else 50) * sin(-pi / 2 + i * pi / 5))
+                for i in range(10)]
+    n = 5 if kind == "pentagon" else 6
+    return [(50 + 50 * cos(-pi / 2 + i * 2 * pi / n),
+             50 + 50 * sin(-pi / 2 + i * 2 * pi / n)) for i in range(n)]
+
+
+def _path(c: Any, s: dict[str, Any], w: float, h: float) -> Any:
+    """Coordinates in local points with +y up, matching ReportLab."""
+    k = s["kind"]
+    path = c.beginPath()
+    xy = lambda xx, yy: (xx * w / 100, h - yy * h / 100)
+    if k == "line":
+        path.moveTo(*xy(0, 50))
+        path.lineTo(*xy(100, 50))
+    elif k == "ellipse":
+        cx, cy, rx, ry, q = w/2, h/2, w/2, h/2, .55228474983
+        path.moveTo(cx + rx, cy)
+        path.curveTo(cx + rx, cy + q*ry, cx + q*rx, cy + ry, cx, cy + ry)
+        path.curveTo(cx - q*rx, cy + ry, cx - rx, cy + q*ry, cx - rx, cy)
+        path.curveTo(cx - rx, cy - q*ry, cx - q*rx, cy - ry, cx, cy - ry)
+        path.curveTo(cx + q*rx, cy - ry, cx + rx, cy - q*ry, cx + rx, cy)
+        path.close()
+    elif k == "rectangle":
+        corners = s.get("corners_mm") or [0, 0, 0, 0]
+        radii = [min(float(v)*MM, w/2, h/2) for v in corners]
+        tl, tr, br, bl = radii
+        q = .55228474983
+        path.moveTo(tl, h)
+        path.lineTo(w-tr, h)
+        path.curveTo(w-tr+q*tr,h,w,h-tr+q*tr,w,h-tr)
+        path.lineTo(w,br)
+        path.curveTo(w,br-q*br,w-br+q*br,0,w-br,0)
+        path.lineTo(bl,0)
+        path.curveTo(bl-q*bl,0,0,bl-q*bl,0,bl)
+        path.lineTo(0,h-tl)
+        path.curveTo(0,h-tl+q*tl,tl-q*tl,h,tl,h)
+        path.close()
+    else:
+        verts = _vertices(k)
+        path.moveTo(*xy(*verts[0]))
+        for p in verts[1:]:
+            path.lineTo(*xy(*p))
+        path.close()
+    return path
+
+
+def _region(kind: str) -> tuple[float, float, float, float]:
+    return {
+        "rectangle":(.05,.07,.9,.86), "ellipse":(.18,.18,.64,.64),
+        "triangle":(.35,.48,.30,.44), "diamond":(.28,.28,.44,.44),
+        "pentagon":(.24,.34,.52,.50), "hexagon":(.2,.18,.6,.64),
+        "star":(.33,.37,.34,.27), "arrow":(.1,.36,.48,.28),
+        "plus":(.09,.37,.82,.26), "line":(0,0,0,0),
+    }[kind]
+
+
+def _segments(text: str, spans: list[dict[str, Any]]) -> list[tuple[str, dict[str, Any]]]:
+    # Shape span indices use UTF-16 code units (browser document coordinates).
+    points=[0]
+    for char in text:
+        points.append(points[-1] + (2 if ord(char) > 0xffff else 1))
+    def at(unit: int) -> int:
+        return next((i for i, v in enumerate(points) if v >= unit), len(text))
+    boundaries={0,len(text)}
+    for span in spans:
+        if isinstance(span,dict) and span.get("type")=="format":
+            boundaries.update((at(int(span.get("start",0))),at(int(span.get("end",0)))))
+    ordered=sorted(boundaries)
+    runs=[]
+    for start,end in zip(ordered,ordered[1:]):
+        attrs={}
+        for span in spans:
+            if isinstance(span,dict) and span.get("type")=="format" and at(int(span.get("start",0)))<=start and at(int(span.get("end",0)))>=end:
+                attrs.update({k:span[k] for k in ("bold","italic","underline","color") if k in span})
+        runs.append((text[start:end],attrs))
+    return runs
+
+
+def _pdf_text(c: Any, shape: dict[str, Any], width: float, height: float) -> None:
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import Paragraph
+    t=shape.get("text") or {}
+    content=t.get("content","")
+    if not isinstance(content,str) or not content or shape["kind"]=="line":
+        return
+    rx,ry,rw,rh=_region(shape["kind"])
+    padding=max(0,min(float(t.get("padding_mm",0))*MM, min(width,height)/5))
+    x=rx*width+padding
+    y=(1-ry-rh)*height+padding
+    max_w=max(1,rw*width-2*padding)
+    max_h=max(1,rh*height-2*padding)
+    fragments=[]
+    for value,formatting in _segments(content,t.get("spans") or []):
+        val=escape(value).replace("\n","<br/>")
+        if formatting.get("bold"):
+            val=f"<b>{val}</b>"
+        if formatting.get("italic"):
+            val=f"<i>{val}</i>"
+        if formatting.get("underline"):
+            val=f"<u>{val}</u>"
+        if isinstance(formatting.get("color"),str):
+            val=f'<font color="{escape(formatting["color"])}">{val}</font>'
+        fragments.append(val)
+    align={"left":0,"center":1,"right":2}.get(t.get("align"),1)
+    initial=max(5,min(144,float(t.get("font_size_pt",12))))
+    size=initial
+    def make(size:float)->tuple[Any,float]:
+        style=ParagraphStyle("shape-text",fontName="Helvetica-Bold" if t.get("bold") else "Helvetica",
+            fontSize=size,leading=size*1.25,alignment=align,textColor=t.get("color","#222222"),
+            splitLongWords=True,spaceAfter=0)
+        paragraph=Paragraph("".join(fragments),style)
+        _,actual=paragraph.wrap(max_w,max_h)
+        return paragraph,actual
+    p,actual=make(size)
+    if t.get("fit")=="shrink":
+        while actual>max_h and size>5:
+            size=max(5,size-0.5)
+            p,actual=make(size)
+    p.drawOn(c,x,y+max(0,(max_h-actual)/2))
+
+
+def draw_vector(c: Any,shape:dict[str,Any], width:float,height:float) -> None:
+    """Paint all shapes, multiple crisp shadows, text and rotation as vector."""
+    from reportlab.lib.colors import HexColor
+    c.saveState()
+    c.translate(width/2,height/2)
+    c.rotate(-float(shape.get("rotation_deg",0)))
+    c.translate(-width/2,-height/2)
+    opacity=max(0,min(1,float(shape.get("opacity",1))))
+    base=_path(c,shape,width,height)
+    for shadow in reversed(shape.get("shadows") or []):
+        if not shadow.get("enabled",True):
+            continue
+        c.saveState()
+        c.translate(float(shadow.get("offset_x_mm",0))*MM,-float(shadow.get("offset_y_mm",0))*MM)
+        blur=max(0,min(30,float(shadow.get("blur_mm",0))))*MM
+        spread=float(shadow.get("spread_mm",0))*MM
+        steps=1 if blur<=0 else 8
+        for i in range(steps,0,-1):
+            c.saveState()
+            size=spread + blur * i / steps * .65
+            c.translate(width/2,height/2)
+            c.scale(max(.1,1+size*2/width),max(.1,1+size*2/height))
+            c.translate(-width/2,-height/2)
+            c.setFillColor(HexColor(shadow.get("color","#444444")))
+            c.setFillAlpha(opacity*float(shadow.get("opacity",.5))*(1 if steps==1 else .16))
+            c.drawPath(base,stroke=0,fill=1)
+            c.restoreState()
+        c.restoreState()
+    fill=shape.get("fill") or {}
+    if fill.get("enabled",True) and shape["kind"]!="line":
+        c.setFillColor(HexColor(fill.get("color","#f1d24b")))
+        c.setFillAlpha(opacity*float(fill.get("opacity",1)))
+        c.drawPath(base,stroke=0,fill=1)
+    outline=shape.get("outline") or {}
+    if outline.get("enabled",True):
+        c.setStrokeColor(HexColor(outline.get("color","#222222")))
+        c.setStrokeAlpha(opacity*float(outline.get("opacity",1)))
+        c.setLineWidth(max(.1,float(outline.get("width_pt",1))))
+        style=outline.get("style")
+        if style=="dashed":
+            c.setDash(5,3)
+        elif style=="dotted":
+            c.setDash(1,3)
+        c.drawPath(base,stroke=1,fill=0)
+    c.setFillAlpha(opacity)
+    _pdf_text(c,shape,width,height)
+    c.restoreState()
+
+
+def make_flowable(block:dict[str,Any], available_width:float, section_setup:Any) -> Any:
+    from reportlab.platypus import Flowable
+    shape=(block.get("extensions") or {})[SHAPE_KEY]
+    w=min(float(shape["width_mm"])*MM,available_width)
+    h=float(shape["height_mm"])*MM*w/(float(shape["width_mm"])*MM)
+    floating=(shape.get("layout") or {}).get("mode")=="floating"
+    class VectorShape(Flowable):
+        def __init__(self)->None:
+            super().__init__()
+            self.width,self.height=w,(.01 if floating else h)
+            self._sldc_block_id=block["id"]
+            self.hAlign="CENTER"
+        def wrap(self,availWidth:float,availHeight:float)->tuple[float,float]:  # noqa:N802
+            return self.width,self.height
+        def draw(self)->None:
+            c=self.canv
+            if floating:
+                position=shape.get("layout") or {}
+                # Absolute coordinates use current page content margins.
+                _,page_h=c._pagesize
+                want_x=section_setup.left*MM+float(position.get("x_mm",0))*MM
+                want_y=page_h-section_setup.top*MM-float(position.get("y_mm",0))*MM-h
+                actual_x,actual_y=c.absolutePosition(0,0)
+                c.saveState()
+                c.translate(want_x-actual_x,want_y-actual_y)
+                draw_vector(c,shape,w,h)
+                c.restoreState()
+            else:
+                draw_vector(c,shape,w,h)
+    return VectorShape()
