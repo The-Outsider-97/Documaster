@@ -25,6 +25,9 @@ MM = 72.0 / 25.4
 _registered: dict[str, str] = {}
 
 
+SLDC_WRITER_SHAPES = True  # Native vector-path rendering (blurred shadows approximated).
+
+
 def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
     try:
         from reportlab.lib import colors
@@ -432,6 +435,8 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
         table.setStyle(TableStyle(cmds))
         return table
 
+    from .vector_shapes import supported as is_vector_shape, make_flowable
+
     def build_story() -> None:
         nonlocal current_section
         story.clear()
@@ -455,7 +460,19 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
             t = block["type"]
             fw = frame_width(current_section)
             fh = frame_height(current_section)
-            if t == "heading":
+            if is_vector_shape(block):
+                shape = block["extensions"]["slai.writer.shape"]
+                if any(float(s.get("blur_mm",0))>0 for s in shape.get("shadows",[])):
+                    note = "Blurred shape shadows are approximated as layered translucent vector paths; visual comparison is recommended."
+                    if note not in warnings:
+                        warnings.append(note)
+                if (shape.get("layout") or {}).get("wrap","none")!="none":
+                    note = "Vector shape wrapping around text is not yet supported in PDF; the shape uses its declared position."
+                    if note not in warnings:
+                        warnings.append(note)
+                flow = make_flowable(block,fw,section_info[current_section]["setup"])
+                emit(flow)
+            elif t == "heading":
                 lv = heading_level(block)
                 style, flags = style_for(block, st_head[lv])
                 flags = {"bold": True, **flags}
@@ -706,7 +723,7 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
     return WriteResult(dest, "pdf", "reportlab" + (f" + {plan.body.label}" if plan.body else ""), warnings=warnings,
                        kept=["text with embedded fonts", "headings and a PDF outline", "lists", "tables with merged cells and "
                              "repeating header rows", "bold/italic/underline/strike/super/subscript/colour", "hyperlinks and "
-                             "internal links", "images", "page size, margins, columns per section",
+                             "internal links", "images", "editable vector path appearance with searchable shape text", "page size, margins, columns per section",
                              "headers/footers with page numbers", "page breaks", "document properties"],
                        lost=lost, pages=pages,
                        layout={"pages": pages, "blockPages": measured_pages.copy(), "printedLabels": printed_labels.copy(),
