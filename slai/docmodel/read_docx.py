@@ -10,6 +10,7 @@ from typing import Any
 
 from ..bridge import sldc
 from ..errors import DependencyMissing, FileRejected
+from .read_vector_shapes import shapes_in_paragraph, SHAPE_KEY
 
 _NS = {
     "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
@@ -212,7 +213,7 @@ def read_docx(path: str) -> dict[str, Any]:
     assets: list[Any] = []
     warnings: list[str] = []
     seen_assets: dict[str, str] = {}
-    state = {"break": False, "images": 0, "skipped_images": 0}
+    state = {"break": False, "images": 0, "skipped_images": 0, "shapes": 0}
     sections = _document_sections(document)
     current_section = 0
 
@@ -306,8 +307,13 @@ def read_docx(path: str) -> dict[str, Any]:
         text, spans = runs_to_text(paragraph)
         pf_break = bool(paragraph.paragraph_format.page_break_before)
         pictures = images_of(paragraph)
+        setup = sections[min(current_section, len(sections)-1)].get("page", {})
+        margins = setup.get("margins_mm", {})
+        shape_values, shape_warnings = shapes_in_paragraph(
+            paragraph, margins.get("left",25.0), margins.get("top",25.0))
+        warnings.extend(shape_warnings)
         stripped = text.strip()
-        if not stripped and not pictures:
+        if not stripped and not pictures and not shape_values:
             return
         lead = len(text) - len(text.lstrip())
         if stripped:
@@ -342,6 +348,13 @@ def read_docx(path: str) -> dict[str, Any]:
             state["break"] = True
         for figure_block in pictures:
             push(figure_block)
+        for shape in shape_values:
+            state["shapes"] += 1
+            # Shape carriers are inert empty paragraphs, not untrusted XML/SVG.
+            # Preserve edits through Writer's existing canonical SLDC extension.
+            imported = sldc().make_block("paragraph", "", extensions={SHAPE_KEY:shape})
+            imported["section"] = sections[min(current_section, len(sections)-1)]["id"]
+            push(imported)
 
     def table_block(table: Table) -> None:
         rows = _table_rows(table)
@@ -387,7 +400,8 @@ def read_docx(path: str) -> dict[str, Any]:
         dropped.append("different first-page or odd/even headers and footers (not yet supported by SLDC 1.x)")
     return {"blocks": blocks, "assets": assets, "sections": sections,
             "title": title, "author": (core.author or "").strip(),
-            "language": None, "dropped": dropped, "warnings": warnings, "images": state["images"]}
+            "language": None, "dropped": dropped, "warnings": warnings, "images": state["images"],
+            "shapes": state["shapes"]}
 
 
 def _run_pieces(run: Any) -> list[str]:
