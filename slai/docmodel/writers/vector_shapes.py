@@ -169,6 +169,13 @@ def draw_vector(c: Any,shape:dict[str,Any], width:float,height:float) -> None:
     c.translate(width/2,height/2)
     c.rotate(-float(shape.get("rotation_deg",0)))
     c.translate(-width/2,-height/2)
+    mirrored=bool(shape.get("flip_horizontal") or shape.get("flip_vertical"))
+    if mirrored:
+        c.saveState()
+        c.translate(width/2,height/2)
+        c.scale(-1 if shape.get("flip_horizontal") else 1,
+                -1 if shape.get("flip_vertical") else 1)
+        c.translate(-width/2,-height/2)
     opacity=max(0,min(1,float(shape.get("opacity",1))))
     base=_path(c,shape,width,height)
     for shadow in reversed(shape.get("shadows") or []):
@@ -207,6 +214,8 @@ def draw_vector(c: Any,shape:dict[str,Any], width:float,height:float) -> None:
             c.setDash(1,3)
         c.drawPath(base,stroke=1,fill=0)
     c.setFillAlpha(opacity)
+    if mirrored:
+        c.restoreState()  # Text remains readable while geometry is mirrored.
     _pdf_text(c,shape,width,height)
     c.restoreState()
 
@@ -334,6 +343,8 @@ def add_docx_shape(document:Any,block:dict[str,Any],setup:Any)->list[str]:
     else:
         container=f'<wp:inline distT="0" distB="0" distL="0" distR="0">{extent}{docpr}{{graphic}}</wp:inline>'
     rotation=round(float(shape.get("rotation_deg",0))*60000)
+    flip_attributes=(' flipH="1"' if shape.get("flip_horizontal") else '')+(
+        ' flipV="1"' if shape.get("flip_vertical") else '')
     geom=_WORD_PRESETS[kind]
     fill=shape.get("fill") or {}
     outline=shape.get("outline") or {}
@@ -366,7 +377,7 @@ def add_docx_shape(document:Any,block:dict[str,Any],setup:Any)->list[str]:
     pad=round(float((shape.get("text") or {}).get("padding_mm",2))*36000)
     bodypr=f'<wps:bodyPr wrap="square" lIns="{pad}" rIns="{pad}" tIns="{pad}" bIns="{pad}" anchor="ctr"/>'
     geometry=(f'<a:graphic><a:graphicData uri="{_WORD_URI}"><wps:wsp><wps:cNvSpPr txBox="0"/>'
-              f'<wps:spPr><a:xfrm rot="{rotation}"><a:off x="0" y="0"/><a:ext cx="{w}" cy="{h}"/></a:xfrm>'
+              f'<wps:spPr><a:xfrm rot="{rotation}"{flip_attributes}><a:off x="0" y="0"/><a:ext cx="{w}" cy="{h}"/></a:xfrm>'
               f'<a:prstGeom prst="{geom}"><a:avLst/></a:prstGeom>{fillxml}{linexml}{effects}</wps:spPr>'
               f'{txbx}{bodypr}</wps:wsp></a:graphicData></a:graphic>')
     root=(f'<w:drawing xmlns:w="{_WORD_W}" xmlns:wp="{_WORD_WP}" '
