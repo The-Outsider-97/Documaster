@@ -311,8 +311,10 @@ def _read_docx(path: Path, svc: Services, name: str) -> IRResult:
         return IRResult(pkg, "python-docx", warnings=data["warnings"],
                         features=["headings", "paragraphs and alignment/spacing", "lists", "tables incl. merged cells",
                                   "font family/size/colour", "bold/italic/underline/strike", "hyperlinks", "page breaks",
-                                  "page size and margins", "headers and footers", "inline images"],
-                        dropped=data["dropped"] + ["text boxes and shapes"])
+                                  "page size and margins", "headers and footers", "inline images"] +
+                                 (["editable Writer shapes reconstructed from DrawingML presets"]
+                                  if data.get("shapes") else []),
+                        dropped=data["dropped"] + ["Unsupported text boxes, advanced drawing effects and unknown shape presets"])
     # fallback: Reader's DOCX text (no structure)
     return _read_text_like(path, svc, name, markdown=False,
                            extra_warning="python-docx is not installed, so only the body text was read "
