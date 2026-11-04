@@ -216,7 +216,8 @@ def make_flowable(block:dict[str,Any], available_width:float, section_setup:Any)
     shape=(block.get("extensions") or {})[SHAPE_KEY]
     w=min(float(shape["width_mm"])*MM,available_width)
     h=float(shape["height_mm"])*MM*w/(float(shape["width_mm"])*MM)
-    floating=(shape.get("layout") or {}).get("mode")=="floating"
+    placement=shape.get("layout") or {}
+    floating=(placement.get("mode")=="floating" and placement.get("wrap","none")!="top_bottom")
     class VectorShape(Flowable):
         def __init__(self)->None:
             super().__init__()
@@ -239,6 +240,8 @@ def make_flowable(block:dict[str,Any], available_width:float, section_setup:Any)
                 draw_vector(c,shape,w,h)
                 c.restoreState()
             else:
+                # Top-and-bottom wrapping participates in ReportLab flow,
+                # consistent with Writer's block-granular pagination.
                 draw_vector(c,shape,w,h)
     return VectorShape()
 
