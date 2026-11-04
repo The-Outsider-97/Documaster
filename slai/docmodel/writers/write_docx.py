@@ -21,6 +21,9 @@ from .common import (Notes, PageSetup, asset_bytes, char_style_table, clean, gro
 MONO = "Consolas"
 
 
+SLDC_WRITER_SHAPES = True  # WordprocessingShape DrawingML output.
+
+
 def write_docx(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
     try:
         import docx
@@ -321,6 +324,8 @@ def write_docx(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
         body_width_mm[0] = text_width_mm(new_setup)
         current_section_id = sid
 
+    from .vector_shapes import supported as is_vector_shape, add_docx_shape
+
     # ---- blocks
     for kind, item in group_blocks(doc_model["blocks"]):
         if kind == "list":
@@ -359,7 +364,9 @@ def write_docx(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
         block = item
         maybe_new_section(block)
         t = block["type"]
-        if t == "heading":
+        if is_vector_shape(block):
+            warnings.extend(add_docx_shape(document, block, effective_setup(sections.get(current_section_id))))
+        elif t == "heading":
             level = heading_level(block)
             style_name = f"Heading {level}" if style_exists(f"Heading {level}") else "Normal"
             p = document.add_paragraph(style=style_name)
@@ -418,7 +425,7 @@ def write_docx(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
     document.save(str(dest))
     return WriteResult(dest, "docx", "python-docx", warnings=warnings,
                        kept=["headings (Heading 1-6)", "lists with restarting numbers", "tables with merged cells and header rows",
-                             "bold/italic/underline/strike/super/subscript/colour", "hyperlinks", "images with alt text",
+                             "bold/italic/underline/strike/super/subscript/colour", "hyperlinks", "images with alt text", "native editable DrawingML vector shapes",
                              "page size, margins, columns", "headers and footers with page numbers", "page breaks",
                              "document title, author, language"],
                        lost=["native footnotes (written as a Notes list)", "comments and revision history", "signatures"])
