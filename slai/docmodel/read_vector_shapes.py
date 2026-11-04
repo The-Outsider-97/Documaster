@@ -178,7 +178,9 @@ def parse_shape(element: Any, margin_left: float = 25.0, margin_top: float = 25.
                         "spread_mm": 0})
     shape = {"version": 1, "kind": kind, "width_mm": w, "height_mm": h,
              "rotation_deg": rotation, "opacity": 1, "fill": fill, "outline": outline,
-             "corners_mm": [0, 0, 0, 0], "text": text, "shadows": shadows, "z_index": 0}
+             "corners_mm": [0, 0, 0, 0], "text": text, "shadows": shadows, "z_index": 0,
+             "flip_horizontal": bool(transform is not None and transform.get("flipH") == "1"),
+             "flip_vertical": bool(transform is not None and transform.get("flipV") == "1")}
     if element.tag == P + "anchor":
         x_node = _child(element, P + "positionH", P + "posOffset")
         y_node = _child(element, P + "positionV", P + "posOffset")
