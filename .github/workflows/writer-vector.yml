@@ -16,4 +16,4 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: python -m pip install pytest reportlab Pillow python-docx pypdf
       - run: python -m compileall -q slai/docmodel/writers
-      - run: python -m pytest tests_py/test_vector_shapes.py -v
+      - run: python -m pytest tests_py/test_vector_shapes.py tests_py/test_read_vector_shapes.py -v
