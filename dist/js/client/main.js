@@ -88,7 +88,11 @@ export function start(root) {
     for (const type of ['dragover', 'drop'])
         window.addEventListener(type, (e) => { if (!e.target?.closest?.('.dropzone'))
             e.preventDefault(); });
-    api.get('/api/health').then(() => docs.refresh()).then(() => show(fromHash())).catch((e) => {
+    api.get('/api/health').then(() => docs.refresh()).then(() => {
+        show(fromHash());
+        window.dispatchEvent(new Event('slai:ready'));
+    }).catch((e) => {
+        window.dispatchEvent(new CustomEvent('slai:startup-error', { detail: e instanceof Error ? e.message : String(e) }));
         if (e instanceof ApiError && e.status === 401) {
             replace(main, h('div', { class: 'workspace' }, h('div', { class: 'card' }, h('h2', { text: 'Open Documaster from its launch link' }), h('p', { text: 'Documaster protects itself with a key that is part of the address it printed when it started. Open that address (it ends with ?token=…) to continue.' }))));
             return;
