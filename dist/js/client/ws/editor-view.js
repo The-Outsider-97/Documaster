@@ -33,6 +33,27 @@ export function createViewer(core, onStampPoint) {
     const el = h('div', { class: 'viewer' }, hint, scroller);
     let loadedKey = '';
     let draft = null;
+    let textDrag = null;
+    function translate(r, dx, dy) {
+        const w = r[2] - r[0], h = r[3] - r[1];
+        const l = Math.min(1 - w, Math.max(0, r[0] + dx));
+        const t = Math.min(1 - h, Math.max(0, r[1] + dy));
+        return [l, t, l + w, t + h];
+    }
+    function startTextDrag(e, id, staged, rect) {
+        const pe = e;
+        if (pe.button !== 0 || !core.canEdit || core.busy || !['view', 'textbox'].includes(core.tool))
+            return;
+        e.preventDefault();
+        e.stopPropagation();
+        overlay.focus();
+        core.selectedTextBox = staged ? null : String(id);
+        core.selectedStaged = staged ? Number(id) : null;
+        core.changed.emit('staged');
+        textDrag = { id, staged, start: point(pe), original: [...rect], current: [...rect] };
+        overlay.setPointerCapture(pe.pointerId);
+        drawOverlay();
+    }
     const widthPx = () => Math.max(240, (scroller.clientWidth || 700) - 32) * core.zoom;
     function layoutFrame() {
         const info = core.info?.pages[core.page];
@@ -71,6 +92,15 @@ export function createViewer(core, onStampPoint) {
             for (const r of hit.rects)
                 parts.push(h('div', { class: `hit${i === core.hitIndex ? ' current' : ''}`, style: rectToCss(r) }));
         });
+        for (const box of core.info?.textboxes ?? []) {
+            if (box.page !== core.page)
+                continue;
+            const r = (textDrag && !textDrag.staged && textDrag.id === box.id ? textDrag.current : box.rect);
+            const selected = core.selectedTextBox === box.id;
+            parts.push(h('div', { class: `editable-textbox${selected ? ' selected' : ''}`, style: rectToCss(r),
+                attrs: { 'data-text-id': box.id, role: 'button', 'aria-label': `Move text: ${box.text.slice(0, 50)}`, title: 'Drag to move this text box' },
+                on: { pointerdown: (e) => startTextDrag(e, box.id, false, box.rect) } }));
+        }
         // staged marks
         const vec = svg('svg', { class: 'ink-layer', viewBox: '0 0 1 1', preserveAspectRatio: 'none' });
         for (const s of core.staged) {
@@ -82,7 +112,10 @@ export function createViewer(core, onStampPoint) {
             if (s.kind === 'redaction')
                 parts.push(h('div', { class: `staged redaction${selected ? ' selected' : ''}`, style: rectToCss(s.rect), title: 'Will be permanently removed. Click to select, Delete to unmark.', on: { pointerdown: select } }, h('span', { text: 'REDACT' })));
             else if (s.kind === 'textbox')
-                parts.push(h('div', { class: `staged textbox${selected ? ' selected' : ''}`, style: { ...rectToCss(s.rect), color: s.color }, on: { pointerdown: select } }, s.text));
+                parts.push(h('div', { class: `staged textbox movable${selected ? ' selected' : ''}`,
+                    style: { ...rectToCss(textDrag?.staged && textDrag.id === s.id ? textDrag.current : s.rect), color: s.color },
+                    attrs: { title: 'Drag to position; apply to make the text editable after saving' },
+                    on: { pointerdown: (e) => startTextDrag(e, s.id, true, s.rect) } }, s.text));
             else if (s.kind === 'image')
                 parts.push(h('div', { class: `staged imagebox${selected ? ' selected' : ''}`, style: rectToCss(s.rect), on: { pointerdown: select } }, s.name));
             else if (s.kind === 'crop')
@@ -133,6 +166,7 @@ export function createViewer(core, onStampPoint) {
         const t = core.tool;
         if (t === 'view') {
             core.selectedStaged = null;
+            core.selectedTextBox = null;
             core.changed.emit('staged');
             return;
         }
@@ -152,6 +186,12 @@ export function createViewer(core, onStampPoint) {
         drawOverlay();
     });
     overlay.addEventListener('pointermove', (e) => {
+        if (textDrag) {
+            const p = point(e);
+            textDrag.current = translate(textDrag.original, p.x - textDrag.start.x, p.y - textDrag.start.y);
+            drawOverlay();
+            return;
+        }
         if (!draft)
             return;
         const p = point(e);
@@ -160,6 +200,23 @@ export function createViewer(core, onStampPoint) {
         drawOverlay();
     });
     const finish = (e) => {
+        if (textDrag) {
+            const d = textDrag;
+            textDrag = null;
+            try {
+                overlay.releasePointerCapture(e.pointerId);
+            }
+            catch { /* no active capture */ }
+            if (d.current.some((n, i) => Math.abs(n - d.original[i]) > 0.00001)) {
+                const rect = R(d.current);
+                if (d.staged)
+                    core.moveStaged(Number(d.id), rect);
+                else
+                    void core.run({ op: 'textbox_move', id: d.id, rect }, 'Moving text', { keepStaged: true, quiet: true });
+            }
+            drawOverlay();
+            return;
+        }
         if (!draft)
             return;
         const d = draft;
@@ -184,17 +241,51 @@ export function createViewer(core, onStampPoint) {
         drawOverlay();
     };
     overlay.addEventListener('pointerup', finish);
-    overlay.addEventListener('pointercancel', finish);
+    overlay.addEventListener('pointercancel', (e) => { textDrag = null; draft = null; try {
+        overlay.releasePointerCapture(e.pointerId);
+    }
+    catch { /* no capture */ } drawOverlay(); });
     overlay.addEventListener('keydown', (e) => {
-        if ((e.key === 'Delete' || e.key === 'Backspace') && core.selectedStaged !== null) {
+        if ((e.key === 'Delete' || e.key === 'Backspace') && core.selectedTextBox) {
+            e.preventDefault();
+            const id = core.selectedTextBox;
+            core.selectedTextBox = null;
+            void core.run({ op: 'textbox_remove', id }, 'Removing text');
+        }
+        else if ((e.key === 'Delete' || e.key === 'Backspace') && core.selectedStaged !== null) {
             e.preventDefault();
             core.unstage(core.selectedStaged);
         }
         else if (e.key === 'Escape') {
+            e.preventDefault();
+            textDrag = null;
             draft = null;
+            core.selectedTextBox = null;
+            core.selectedStaged = null;
             if (core.tool !== 'view')
                 core.setTool('view');
             drawOverlay();
+        }
+        else if (e.key.startsWith('Arrow') && (core.selectedTextBox || core.selectedStaged !== null)) {
+            e.preventDefault();
+            const page = core.info?.pages[core.page];
+            if (!page)
+                return;
+            const turned = page.rotation % 180 !== 0;
+            const w = turned ? page.height : page.width, h = turned ? page.width : page.height;
+            const increment = (e.shiftKey ? 10 : 1) * 72 / 25.4; // 1 or 10 mm in PDF points
+            const dx = e.key === 'ArrowLeft' ? -increment / w : e.key === 'ArrowRight' ? increment / w : 0;
+            const dy = e.key === 'ArrowUp' ? -increment / h : e.key === 'ArrowDown' ? increment / h : 0;
+            const staged = core.stagedOf('textbox').find((s) => s.id === core.selectedStaged);
+            const saved = core.info?.textboxes.find((s) => s.id === core.selectedTextBox);
+            const box = staged ?? saved;
+            if (!box || core.busy)
+                return;
+            const rect = R(translate(box.rect, dx, dy));
+            if (staged)
+                core.moveStaged(staged.id, rect);
+            else if (saved)
+                void core.run({ op: 'textbox_move', id: saved.id, rect }, 'Moving text', { keepStaged: true, quiet: true });
         }
     });
     const round = (v) => Math.round(clamp01(v) * 10000) / 10000;

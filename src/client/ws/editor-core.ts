@@ -29,6 +29,8 @@ export class EditorCore {
   hitIndex = -1;
   staged: Staged[] = [];
   selectedStaged: number | null = null;
+  /** Stable PDF /NM identifier of a saved, movable Documaster FreeText object. */
+  selectedTextBox: string | null = null;
   pendingAsset: { id: string; name: string } | null = null;
   /** Settings of the text stamp placed by clicking on the page. */
   stampForm = { text: '', size: 24, color: '#dc2626', opacity: 1, rotation: 0 };
@@ -51,6 +53,8 @@ export class EditorCore {
     this.doc = doc;
     this.page = Math.max(0, Math.min(page, Math.max(0, (doc.pages ?? 1) - 1)));
     this.staged = [];
+    this.selectedStaged = null;
+    this.selectedTextBox = null;
     this.hits = [];
     this.hitIndex = -1;
     this.info = null;
@@ -62,6 +66,8 @@ export class EditorCore {
     this.doc = null;
     this.info = null;
     this.staged = [];
+    this.selectedStaged = null;
+    this.selectedTextBox = null;
     this.hits = [];
     this.changed.emit('doc');
   }
@@ -99,6 +105,10 @@ export class EditorCore {
     this.staged = this.staged.filter((s) => s.id !== id);
     if (this.selectedStaged === id) this.selectedStaged = null;
     this.changed.emit('staged');
+  }
+  moveStaged(id: number, rect: Rect): void {
+    const box = this.staged.find((s) => s.id === id);
+    if (box && box.kind === 'textbox') { box.rect = rect; this.changed.emit('staged'); }
   }
   clearStaged(kind?: Staged['kind']): void {
     this.staged = kind ? this.staged.filter((s) => s.kind !== kind) : [];

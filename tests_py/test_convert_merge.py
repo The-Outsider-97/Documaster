@@ -29,7 +29,9 @@ class ConvertTests(unittest.TestCase):
     def test_docx_to_every_available_target_is_verified(self):
         caps = self.h.call("GET", "/api/convert/formats")
         for t in caps["targets"]:
-            if not t["available"] or t["id"] in ("sldc", "docx"):      # a DOCX is not converted to DOCX (see the next test)
+            route = next((r for r in caps['routes'] if r['from'] == 'docx' and r['to'] == t['id']), None)
+            if (not t['available'] or not route or not route['model']['available'] or
+                    t['id'] in ('sldc', 'docx')):  # same-format refusal and SLDC are covered separately
                 continue
             with self.subTest(target=t["id"]):
                 rep = self.convert(self.docx, t["id"])

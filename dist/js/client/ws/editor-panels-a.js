@@ -131,6 +131,7 @@ export function stampPanel(env) {
     const fileInput = h('input', { attrs: { type: 'file', accept: '.png,.jpg,.jpeg', 'aria-label': 'Image file' }, class: 'visually-hidden' });
     const tbList = h('div', { class: 'item-list' });
     const imgList = h('div', { class: 'item-list' });
+    const positionControls = h('div', { class: 'position-controls' });
     const num = (v, d) => Number(v) || d;
     const pagesSpec = (v) => { const t = v.trim().toLowerCase(); return !t ? 'all' : (['all', 'odd', 'even', 'first', 'last'].includes(t) ? t : t); };
     fileInput.addEventListener('change', async () => {
@@ -151,11 +152,14 @@ export function stampPanel(env) {
     async function applyTextBoxes() {
         const boxes = core.stagedOf('textbox');
         for (const b of boxes) {
-            const r = await core.run({ op: 'stamp', kind: 'textbox', rect: b.rect, text: b.text, size: b.size, color: b.color, pages: [b.page + 1] }, 'Adding text', { keepStaged: true, quiet: true });
+            const r = await core.run({ op: 'textbox_add', page: b.page + 1, rect: b.rect, text: b.text, size: b.size, color: b.color }, 'Adding editable text', { keepStaged: true, quiet: true });
             if (!r)
                 return;
             core.unstage(b.id);
+            if (typeof r.details['id'] === 'string')
+                core.selectedTextBox = r.details['id'];
         }
+        core.changed.emit('staged');
         toast(`Added ${plural(boxes.length, 'text box', 'text boxes')}`, 'ok');
     }
     async function applyImages() {
@@ -173,6 +177,36 @@ export function stampPanel(env) {
         const ims = core.stagedOf('image');
         replace(tbList, ...tbs.map((s) => h('div', { class: 'item' }, h('span', { class: 'clip', text: `p. ${s.page + 1} · ${s.text.slice(0, 40)}` }), button('✕', () => core.unstage(s.id), 'btn-icon'))));
         replace(imgList, ...ims.map((s) => h('div', { class: 'item' }, h('span', { class: 'clip', text: `p. ${s.page + 1} · ${s.name}` }), button('✕', () => core.unstage(s.id), 'btn-icon'))));
+        const box = core.info?.textboxes.find((b) => b.id === core.selectedTextBox);
+        const page = box && core.info?.pages[box.page];
+        if (box && page) {
+            const turned = page.rotation % 180 !== 0;
+            const w = (turned ? page.height : page.width) * 25.4 / 72;
+            const ht = (turned ? page.width : page.height) * 25.4 / 72;
+            const values = [box.rect[0] * w, box.rect[1] * ht, (box.rect[2] - box.rect[0]) * w, (box.rect[3] - box.rect[1]) * ht];
+            function move(n, next) {
+                if (!Number.isFinite(next) || next < 0) {
+                    toast('Enter a valid position in millimetres', 'error');
+                    return;
+                }
+                const v = values.slice();
+                v[n] = next;
+                if (v[0] + v[2] > w + 0.001 || v[1] + v[3] > ht + 0.001 || v[2] <= 0 || v[3] <= 0) {
+                    toast('Text must remain within the page', 'error');
+                    return;
+                }
+                const rect = [v[0] / w, v[1] / ht, (v[0] + v[2]) / w, (v[1] + v[3]) / ht];
+                void core.run({ op: 'textbox_move', id: box.id, rect }, 'Positioning text', { keepStaged: true, quiet: true });
+            }
+            replace(positionControls, h('h4', { text: 'Selected movable text' }), h('div', { class: 'row wrap' }, ...['X', 'Y', 'Width', 'Height'].map((name, i) => field(`${name} (mm)`, h('input', { class: 'input short', value: values[i].toFixed(2), attrs: { type: 'number', min: 0, max: i % 2 ? ht : w, step: 0.1 },
+                on: { change: (e) => move(i, Number(e.target.value)) } })))), h('div', { class: 'row-actions wrap' }, button('Edit text', async () => {
+                const next = await promptText('Edit text box', 'Text', box.text);
+                if (next !== null && next !== box.text)
+                    await core.run({ op: 'textbox_edit', id: box.id, text: next }, 'Editing text', { keepStaged: true });
+            }, 'btn-small'), button('Remove', () => { core.selectedTextBox = null; void core.run({ op: 'textbox_remove', id: box.id }, 'Removing text'); }, 'btn-small btn-danger')));
+        }
+        else
+            replace(positionControls, h('div', { class: 'muted small', text: 'Select a text box on the page to adjust its position in millimetres.' }));
         syncTools(root, env);
         for (const b of root.querySelectorAll('button[data-apply="textbox"]'))
             b.disabled = !tbs.length || core.busy;
@@ -180,8 +214,8 @@ export function stampPanel(env) {
             b.disabled = !ims.length || core.busy;
     }
     const notice = noticeSlot(env, 'modify', 'adding content');
-    replace(root, notice.el, h('p', { class: 'muted small', text: 'Stamped content becomes part of the page. Use Undo (top bar) to take it back.' }), h('h4', { text: 'Watermark' }), field('Text', h('input', { class: 'input', value: wm.text, attrs: { type: 'text', maxlength: 60 }, on: { input: (e) => { wm.text = e.target.value; } } })), h('div', { class: 'row' }, field('Size', h('input', { class: 'input short', value: String(wm.size), attrs: { type: 'number', min: 8, max: 300 }, on: { input: (e) => { wm.size = num(e.target.value, 72); } } })), field('Opacity', h('input', { attrs: { type: 'range', min: 0.05, max: 1, step: 0.05 }, value: String(wm.opacity), on: { input: (e) => { wm.opacity = Number(e.target.value); } } })), field('Colour', h('input', { class: 'color', attrs: { type: 'color' }, value: wm.color, on: { input: (e) => { wm.color = e.target.value; } } }))), pagesField(wm.pages, (v) => { wm.pages = v; }), button('Add watermark', () => void core.run({ op: 'stamp', kind: 'watermark', text: wm.text, size: wm.size, opacity: wm.opacity, color: wm.color, pages: pagesSpec(wm.pages) }, 'Adding watermark'), 'btn-small'), h('hr'), h('h4', { text: 'Page numbers' }), field('Format', h('input', { class: 'input', value: pn.format, attrs: { type: 'text' }, on: { input: (e) => { pn.format = e.target.value; } } }), 'Use {n} for the number and {N} for the total'), h('div', { class: 'row' }, field('Position', select([['bottom-center', 'Bottom centre'], ['bottom-left', 'Bottom left'], ['bottom-right', 'Bottom right'], ['top-center', 'Top centre'], ['top-left', 'Top left'], ['top-right', 'Top right']].map(([v, l]) => ({ value: v, label: l })), pn.position, (v) => { pn.position = v; })), field('Start at', h('input', { class: 'input short', value: '1', attrs: { type: 'number', min: 0 }, on: { input: (e) => { pn.start = num(e.target.value, 1); } } }))), pagesField(pn.pages, (v) => { pn.pages = v; }), button('Add page numbers', () => void core.run({ op: 'stamp', kind: 'page_numbers', format: pn.format, position: pn.position, start: pn.start, size: pn.size, pages: pagesSpec(pn.pages) }, 'Adding page numbers'), 'btn-small'), h('hr'), h('h4', { text: 'Text at a point' }), field('Text', h('input', { class: 'input', attrs: { type: 'text', placeholder: 'e.g. APPROVED' }, on: { input: (e) => { core.stampForm.text = e.target.value; } } })), h('div', { class: 'row' }, field('Size', h('input', { class: 'input short', value: '24', attrs: { type: 'number', min: 6, max: 200 }, on: { input: (e) => { core.stampForm.size = num(e.target.value, 24); } } })), field('Angle', h('input', { class: 'input short', value: '0', attrs: { type: 'number', min: -180, max: 180 }, on: { input: (e) => { core.stampForm.rotation = num(e.target.value, 0); } } })), field('Colour', h('input', { class: 'color', attrs: { type: 'color' }, value: core.stampForm.color, on: { input: (e) => { core.stampForm.color = e.target.value; } } }))), toolButton(env, 'stamp', 'Click on the page to place', 'Click on the page where the text should go'), h('hr'), h('h4', { text: 'Text boxes' }), h('p', { class: 'muted small', text: 'Drag a box on the page and type the text. Add several, then apply them together.' }), h('div', { class: 'row-actions wrap' }, toolButton(env, 'textbox', 'Draw text box', 'Drag a box on the page'), button('Add text boxes to the PDF', () => void applyTextBoxes(), 'btn-small', { attrs: { 'data-apply': 'textbox' } })), tbList, h('hr'), h('h4', { text: 'Image' }), h('div', { class: 'row-actions wrap' }, button('Choose image…', () => fileInput.click(), 'btn-small'), fileInput, toolButton(env, 'imagebox', 'Draw image area', 'Drag the area for the image'), button('Place images', () => void applyImages(), 'btn-small', { attrs: { 'data-apply': 'image' } })), imageInfo, imgList);
-    core.changed.on((k) => { if (k === 'staged' || k === 'tool' || k === 'busy')
+    replace(root, notice.el, h('p', { class: 'muted small', text: 'Text boxes stay movable after saving. Select and drag one on the page or adjust its coordinates below. Watermarks and other stamps are embedded in the page.' }), h('h4', { text: 'Watermark' }), field('Text', h('input', { class: 'input', value: wm.text, attrs: { type: 'text', maxlength: 60 }, on: { input: (e) => { wm.text = e.target.value; } } })), h('div', { class: 'row' }, field('Size', h('input', { class: 'input short', value: String(wm.size), attrs: { type: 'number', min: 8, max: 300 }, on: { input: (e) => { wm.size = num(e.target.value, 72); } } })), field('Opacity', h('input', { attrs: { type: 'range', min: 0.05, max: 1, step: 0.05 }, value: String(wm.opacity), on: { input: (e) => { wm.opacity = Number(e.target.value); } } })), field('Colour', h('input', { class: 'color', attrs: { type: 'color' }, value: wm.color, on: { input: (e) => { wm.color = e.target.value; } } }))), pagesField(wm.pages, (v) => { wm.pages = v; }), button('Add watermark', () => void core.run({ op: 'stamp', kind: 'watermark', text: wm.text, size: wm.size, opacity: wm.opacity, color: wm.color, pages: pagesSpec(wm.pages) }, 'Adding watermark'), 'btn-small'), h('hr'), h('h4', { text: 'Page numbers' }), field('Format', h('input', { class: 'input', value: pn.format, attrs: { type: 'text' }, on: { input: (e) => { pn.format = e.target.value; } } }), 'Use {n} for the number and {N} for the total'), h('div', { class: 'row' }, field('Position', select([['bottom-center', 'Bottom centre'], ['bottom-left', 'Bottom left'], ['bottom-right', 'Bottom right'], ['top-center', 'Top centre'], ['top-left', 'Top left'], ['top-right', 'Top right']].map(([v, l]) => ({ value: v, label: l })), pn.position, (v) => { pn.position = v; })), field('Start at', h('input', { class: 'input short', value: '1', attrs: { type: 'number', min: 0 }, on: { input: (e) => { pn.start = num(e.target.value, 1); } } }))), pagesField(pn.pages, (v) => { pn.pages = v; }), button('Add page numbers', () => void core.run({ op: 'stamp', kind: 'page_numbers', format: pn.format, position: pn.position, start: pn.start, size: pn.size, pages: pagesSpec(pn.pages) }, 'Adding page numbers'), 'btn-small'), h('hr'), h('h4', { text: 'Fixed text stamp (legacy)' }), h('p', { class: 'muted small', text: 'This existing stamp tool embeds text directly into the page, including arbitrary angles. For text that remains draggable, use Text boxes below.' }), field('Text', h('input', { class: 'input', attrs: { type: 'text', placeholder: 'e.g. APPROVED' }, on: { input: (e) => { core.stampForm.text = e.target.value; } } })), h('div', { class: 'row' }, field('Size', h('input', { class: 'input short', value: '24', attrs: { type: 'number', min: 6, max: 200 }, on: { input: (e) => { core.stampForm.size = num(e.target.value, 24); } } })), field('Angle', h('input', { class: 'input short', value: '0', attrs: { type: 'number', min: -180, max: 180 }, on: { input: (e) => { core.stampForm.rotation = num(e.target.value, 0); } } })), field('Colour', h('input', { class: 'color', attrs: { type: 'color' }, value: core.stampForm.color, on: { input: (e) => { core.stampForm.color = e.target.value; } } }))), toolButton(env, 'stamp', 'Click on the page to place', 'Click on the page where the text should go'), h('hr'), h('h4', { text: 'Text boxes' }), h('p', { class: 'muted small', text: 'Drag a box on the page and type the text. Add several, then apply them together.' }), h('div', { class: 'row-actions wrap' }, toolButton(env, 'textbox', 'Draw text box', 'Drag a box on the page'), button('Add text boxes to the PDF', () => void applyTextBoxes(), 'btn-small', { attrs: { 'data-apply': 'textbox' } })), tbList, positionControls, h('hr'), h('h4', { text: 'Image' }), h('div', { class: 'row-actions wrap' }, button('Choose image…', () => fileInput.click(), 'btn-small'), fileInput, toolButton(env, 'imagebox', 'Draw image area', 'Drag the area for the image'), button('Place images', () => void applyImages(), 'btn-small', { attrs: { 'data-apply': 'image' } })), imageInfo, imgList);
+    core.changed.on((k) => { if (k === 'staged' || k === 'tool' || k === 'busy' || k === 'info')
         render(); });
     render();
     return { id: 'stamp', title: 'Add', el: root, refresh: render };

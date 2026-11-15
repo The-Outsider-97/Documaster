@@ -5,6 +5,7 @@ The UI works in *normalised display coordinates*: ``(0, 0)`` is the top-left of 
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any, Sequence
 
@@ -65,7 +66,7 @@ def from_user(x: float, y: float, g: PageGeometry) -> tuple[float, float]:
 
 
 def clamp_rect(rect: Sequence[float]) -> list[float]:
-    if len(rect) != 4 or not all(isinstance(v, (int, float)) for v in rect):
+    if not isinstance(rect, (list, tuple)) or len(rect) != 4 or not all(isinstance(v, (int, float)) and math.isfinite(v) for v in rect):
         raise ValueError("a rectangle is four numbers [left, top, right, bottom]")
     l, t, r, b = (min(1.0, max(0.0, float(v))) for v in rect)
     l, r = min(l, r), max(l, r)

@@ -15,12 +15,14 @@ Files you open stay open in all workspaces: the "Add an open document…" list a
 
 ## Converter
 
-1. Drop one or more files. Reorder or remove them in the list.
-2. Choose **Convert to:**. "What to expect from this format" lists what that format cannot carry. Formats that cannot be written on this computer are marked "(unavailable)".
-3. Press **Convert**. Each result card says **Checked** when the new file was re-opened and compared with the source, lists what was kept and what was not carried over, and has the download link. Files are saved in your output folder under a free name; nothing is overwritten.
-4. Options: title, page size, font size, page numbers, footnotes, OCR, the conversion engine (Documaster's own, or LibreOffice to keep page layout), line endings for text, and a password for SLDC.
+1. Drop or browse for multiple files, including mixed source types; reorder or remove them independently. Unsupported inputs are rejected with a filename-specific message.
+2. Choose **All files to one format** to give every file the same target, or **Choose a format for each file** to select a compatible output for each source. Invalid source/target/engine combinations are clearly rejected. Same-format files are copied byte-for-byte, rather than re-encoded.
+3. Select **Parallel conversions** (1–3, default 2), then press **Convert All**. Each file has its own progress, **Cancel file** action, status and result. **Cancel All**, **Retry Failed**, and individual **Retry** controls preserve successful results. Incompatible files are marked **Skipped** while supported files continue.
+4. Download each verified result using its card, use **Download as ZIP** for one archive, or **Download All Separately** for independent files. Separate downloads also include supplementary page images and other supporting files. The ZIP and local output folder avoid filename collisions.
+5. The **Local output folder** field configures Documaster's writable output location on this machine. In a compatible secure browser, **Download All Separately** opens a directory picker; otherwise ordinary browser downloads are used, subject to the browser's folder and multi-download permissions.
+6. Options: title, page size, font size, page numbers, footnotes, OCR, the conversion engine (Documaster's own, or LibreOffice where the pair is supported), line endings and an optional SLDC password.
 
-Converting a file to its own format is refused (there is nothing to do).
+Images: PNG and JPEG can be converted to one-page PDFs or to the other image format. PDFs can be exported as PNG/JPEG (one file per page). Office-to-image and spreadsheet/slideshow conversion paths are not advertised unless supported by the installed engines. Image exports are rasterised and do not preserve editable text/vectors.
 
 ## Merger & Page Organizer
 
@@ -37,7 +39,7 @@ Open a PDF (Open PDF…, or from another workspace). The strip on the left shows
 
 * **Pages** - rotate, move, delete, duplicate, insert a blank page, extract selected pages, split into one file per page, insert pages from another open PDF, crop.
 * **Annotate** - choose a tool (highlight, underline, strike-out, comment, rectangle, ellipse, freehand) and draw. Marks stay as **drafts** until you press "Add annotations to the PDF"; they then become standard PDF annotations other viewers show. Existing annotations are listed and can be removed. Sticky-note comments also have an **Edit** action to change their text without changing their annotation identity. This does not provide arbitrary editing of existing PDF page text.
-* **Add** - watermark, page numbers, text at a point, text boxes, images.
+* **Add** - watermark, page numbers, text at a point, movable text boxes and images. Draw a text box, enter its content, then drag the draft to its intended position. Press **Add text boxes to the PDF** to save it as an editable PDF text annotation. In **View** mode, select and drag saved Documaster text boxes again; use arrow keys for 1 mm moves, Shift+arrow for 10 mm moves, or edit X/Y/width/height in millimetres. You can edit or remove a selected text box. Undo/redo, PDF save, page rotation and reload preserve its position. Original PDF text and text-at-point stamps are not individually movable.
 * **Redact** - find text, scan for personal data, or draw areas; mark them, then **Permanently redact**. The marked pages become images with black boxes; the saved file is checked for leftover text and metadata and discarded if the check fails. Text outside the visible page area on a redacted page is removed with the page. After redaction the page text is no longer selectable (run OCR if you need it back).
 * **Forms** - fill fields; optionally flatten. Signature fields are never filled or signed.
 * **Document** - properties, bookmarks, password (set, change, remove), clean-up (remove hidden data), compress, OCR.

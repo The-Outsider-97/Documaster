@@ -18,7 +18,7 @@ from typing import Any, Callable
 from ..errors import (DocumasterError, DependencyMissing, OutputFailed, PermissionDenied, UnsupportedOperation,
                       ValidationFailed)
 from ..services import NO_CONTROL, JobControl, Services
-from . import annotate, docinfo, forms, redact, stamp
+from . import annotate, docinfo, forms, redact, stamp, textboxes
 from .geometry import clamp_rect, geometry_of, rect_to_user
 from .organize import PdfSource, PlanItem, assemble, parse_plan, verify_assembly
 from .pdfio import norm_text, open_reader, parse_ranges, save_writer
@@ -273,6 +273,61 @@ def _crop(ctx: Ctx, spec: dict[str, Any]) -> OpResult:
 
 
 # ----------------------------------------------------------------------------------------------- annotate / stamp
+@op('textbox_add', 'modify')
+def _textbox_add(ctx: Ctx, spec: dict[str, Any]) -> OpResult:
+    page = spec.get('page')
+    if not isinstance(page, int):
+        raise ValidationFailed('A text box needs a 1-based page number')
+    w = ctx.writer()
+    ident = textboxes.add(w, page - 1, spec.get('rect'), spec.get('text'),
+                          spec.get('size', 12), spec.get('color', '#111827'))
+    ctx.save(w)
+    if not any(t['id'] == ident for t in textboxes.listing(open_reader(ctx.out, ctx.opw))):
+        raise OutputFailed('The text box was not preserved in the saved PDF')
+    return OpResult('Added movable text box', details={'id': ident})
+
+
+@op('textbox_move', 'modify')
+def _textbox_move(ctx: Ctx, spec: dict[str, Any]) -> OpResult:
+    w = ctx.writer()
+    ident = spec.get('id')
+    changed = textboxes.move(w, ident, spec.get('rect'))
+    if not changed:
+        return OpResult('Text box already at this position', changed=False)
+    ctx.save(w)
+    r = next((t for t in textboxes.listing(open_reader(ctx.out, ctx.opw)) if t['id'] == ident), None)
+    if r is None or any(abs(a - b) > 0.0001 for a, b in zip(r['rect'], spec['rect'])):
+        raise OutputFailed('The text box position did not survive saving')
+    return OpResult('Moved text box', details={'id': ident, 'rect': r['rect']})
+
+
+@op('textbox_remove', 'modify')
+def _textbox_remove(ctx: Ctx, spec: dict[str, Any]) -> OpResult:
+    w = ctx.writer()
+    ident = spec.get('id')
+    if not isinstance(ident, str) or not ident.startswith('dm-text-'):
+        raise ValidationFailed('Only Documaster text boxes can be removed')
+    # Check the subtype too: never remove foreign annotations with a forged name.
+    if not any(t['id'] == ident for t in textboxes.listing(w)):
+        raise ValidationFailed('That editable text box no longer exists')
+    n = annotate.remove(w, [{'id': ident}])
+    ctx.save(w)
+    return OpResult('Removed text box', details={'removed': n})
+
+
+@op('textbox_edit', 'modify')
+def _textbox_edit(ctx: Ctx, spec: dict[str, Any]) -> OpResult:
+    w = ctx.writer()
+    changed = textboxes.edit(w, spec.get('id'), spec.get('text'))
+    if not changed:
+        return OpResult('Text is unchanged', changed=False)
+    ctx.save(w)
+    entry = next((t for t in textboxes.listing(open_reader(ctx.out, ctx.opw)) if t['id'] == spec['id']), None)
+    if not entry or entry['text'] != spec['text']:
+        raise OutputFailed('The edited text did not survive saving')
+    return OpResult('Edited text box', details={'id': spec['id']})
+
+
 @op("annotate", "annotate")
 def _annotate(ctx: Ctx, spec: dict[str, Any]) -> OpResult:
     items = spec.get("annotations")

@@ -39,7 +39,7 @@ FORMATS: dict[str, Format] = {f.id: f for f in (
 EXT_TO_FORMAT: dict[str, str] = {ext: f.id for f in FORMATS.values() for ext in f.exts}
 
 # Formats Documaster can produce from its document model.
-TARGETS = ("pdf", "docx", "odt", "rtf", "html", "md", "txt", "xml", "sldc")
+TARGETS = ("pdf", "docx", "odt", "rtf", "html", "md", "txt", "xml", "sldc", "png", "jpeg")
 
 
 def format_for_ext(name: str) -> str | None:

@@ -21,7 +21,7 @@ from typing import Any
 from ..bridge import sldc
 from ..errors import DependencyMissing, DocumasterError, OutputFailed, UnsupportedOperation, ValidationFailed
 from ..files import atomic_output, reserve_path, sha256_file
-from ..formats import FORMATS, TARGETS, ext_for, label_for
+from ..formats import FORMATS, TARGETS, ext_for, label_for, sniff
 from ..services import NO_CONTROL, JobControl, Services
 from .readers import read_document, soffice_convert
 from .verify import verify_written, words_of
@@ -34,6 +34,7 @@ LO_SOURCES = {"docx", "doc", "odt", "rtf", "html", "txt", "md"}
 @dataclass
 class ConvertOptions:
     target: str
+    retain_same_format: bool = False
     engine: str = "model"
     password: str | None = None
     ocr: bool = False
@@ -87,8 +88,15 @@ def convert_file(svc: Services, source: Path, source_name: str, source_fmt: str,
     started = time.perf_counter()
     target = opts.target
     if source_fmt == target:
+        if opts.retain_same_format:
+            return _retain_original(source, source_name, source_fmt, out_dir, control, started)
         raise ValidationFailed(f"The file is already {label_for(target)}. Choose another target format.",
                                code="same_format")
+    if source_fmt in ('png', 'jpeg') or target in ('png', 'jpeg'):
+        if opts.engine != 'model':
+            raise UnsupportedOperation('Image conversions use the Documaster raster engine, not LibreOffice')
+        from .image_convert import convert_images
+        return convert_images(svc, source, source_name, source_fmt, target, out_dir, control, opts.password)
     if opts.engine == "libreoffice":
         return _convert_libreoffice(svc, source, source_name, source_fmt, opts, out_dir, control, started)
     control.report(0.02, "Reading the document")
@@ -134,6 +142,32 @@ def convert_file(svc: Services, source: Path, source_name: str, source_fmt: str,
     control.report(1.0, "Done")
     return _report(svc, source, source_name, source_fmt, final, extras, result, written, verification, "model",
                    started, opts)
+
+
+def _retain_original(source: Path, name: str, fmt: str, out_dir: Path, control: JobControl, started: float) -> dict[str, Any]:
+    """Explicit lossless same-format policy; default conversion behaviour remains unchanged."""
+    control.check()
+    stem = _free_stem(out_dir, Path(name).stem or 'document', ext_for(fmt), False)
+    with atomic_output(out_dir, stem, ext_for(fmt)) as out:
+        shutil.copyfile(source, out.temp)
+        if sha256_file(source) != sha256_file(out.temp):
+            raise OutputFailed('The retained source bytes did not match the original')
+        check = sniff(out.temp, name)
+        if check['format'] != fmt:
+            raise OutputFailed('The retained output does not have the expected format')
+        final = out.commit()
+    control.report(1, 'Original retained unchanged')
+    verification = {'ok': True, 'checks': [
+        {'name': 'Source bytes', 'ok': True, 'detail': 'SHA-256 matches the original'},
+        {'name': 'Format signature', 'ok': True, 'detail': f'Confirmed {label_for(fmt)}'}]}
+    return {
+        'input': {'name': name, 'format': fmt, 'bytes': source.stat().st_size},
+        'output': {'path': str(final), 'name': final.name, 'format': fmt, 'bytes': final.stat().st_size,
+                   'sha256': sha256_file(final), 'pages': None, 'extras': []},
+        'engine': 'copy', 'backend': {'read': 'byte-preserving copy', 'write': 'byte-preserving copy'},
+        'kept': ['All original content and bytes'], 'lost': [], 'warnings': [], 'ocrPages': [],
+        'verification': verification, 'durationMs': round((time.perf_counter() - started) * 1000),
+    }
 
 
 def _encrypt_sldc(path: Path, password: str) -> None:

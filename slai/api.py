@@ -6,13 +6,13 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from . import __version__, capabilities, counter, merger
+from . import __version__, capabilities, counter, merger, output_bundle
 from .app import App
 from .docmodel.convert import ConvertOptions, convert_file
 from .errors import DocumasterError, NotFound, UnsupportedOperation, ValidationFailed
 from .formats import FORMATS, TARGETS
 from .jobs import Job
-from .pdfops import docinfo, forms, ops, redact
+from .pdfops import docinfo, forms, ops, redact, textboxes
 from .pdfops.annotate import listing as annotation_listing
 from .pdfops.pdfio import open_reader
 from .pdfops.render import page_sizes, render_page
@@ -197,7 +197,8 @@ def pdf_info(app: App, req: Request) -> Any:
     reader = open_reader(doc.path, doc.password)
     return {"metadata": docinfo.read_metadata(reader), "outline": docinfo.outline_tree(reader),
             "annotations": annotation_listing(reader), "fields": forms.list_fields(reader),
-            "pages": page_sizes(doc.path, doc.password), "permissions": doc.permissions}
+            "pages": page_sizes(doc.path, doc.password), "permissions": doc.permissions,
+            "textboxes": textboxes.listing(reader)}
 
 
 @route("POST", "/api/documents/{id}/find")
@@ -223,8 +224,30 @@ def upload_asset(app: App, req: Request) -> Any:
 @route("GET", "/api/outputs/{id}/download")
 def output_download(app: App, req: Request) -> Any:
     out = app.ws.output(req.params["id"])
-    return Response(200, file_path=str(out.path), content_type=FORMATS.get(out.format).mime if out.format in FORMATS
-                    else "application/octet-stream", download_name=out.name)
+    return Response(200, file_path=str(out.path), content_type=FORMATS[out.format].mime if out.format in FORMATS
+                    else 'application/zip' if out.format == 'zip' else 'application/octet-stream', download_name=out.name)
+
+
+@route('POST', '/api/outputs/zip')
+def output_zip(app: App, req: Request) -> Any:
+    ids = req.json().get('outputs')
+    out = output_bundle.bundle(app.ws, ids)
+    return out.public()
+
+
+@route('GET', '/api/outputs/{id}/extras/{index}/download')
+def output_extra_download(app: App, req: Request) -> Any:
+    out = app.ws.output(req.params['id'])
+    files = output_bundle.artifacts(out)[1:]
+    try:
+        index = int(req.params['index'])
+    except ValueError as exc:
+        raise ValidationFailed('Invalid supporting file index') from exc
+    if not 0 <= index < len(files):
+        raise ValidationFailed('Supporting file does not exist')
+    path, name = files[index]
+    return Response(200, file_path=str(path), content_type='application/octet-stream',
+                    download_name=Path(name).name)
 
 
 @route("POST", "/api/outputs/{id}/open")
@@ -307,11 +330,14 @@ def convert(app: App, req: Request) -> Any:
             o = ConvertOptions.from_dict({**opts_in, "password": opts_in.get("password") or d.password})
             try:
                 ir = None
-                if o.engine == "model" and d.format != o.target:
+                # Raster routes are handled directly by the image converter.  They
+                # cannot be parsed into the SLDC text/document model first.
+                if (o.engine == "model" and d.format != o.target
+                        and d.format not in ('png', 'jpeg') and o.target not in ('png', 'jpeg')):
                     ir = app.ws.ir(d, sub, ocr=o.ocr, ocr_lang=o.ocr_lang)  # type: ignore[arg-type]
                 report = convert_file(app.svc, d.path, d.name, d.format, o, out_dir, sub, ir=ir)  # type: ignore[arg-type]
                 out = app.ws.register_output(Path(report["output"]["path"]), o.target,
-                                             [Path(p).name for p in report["output"]["extras"]])
+                                             [str(Path(p).relative_to(out_dir)) for p in report["output"]["extras"]])
                 report["output"]["id"] = out.id
                 results.append({"id": d.id, "ok": True, "report": report})
             except DocumasterError as exc:
@@ -328,7 +354,8 @@ def convert_formats(app: App, req: Request) -> Any:
     m = capabilities.matrix(app.svc)
     return {"targets": [{"id": t, "label": FORMATS[t].label, "available": m["write"][t]["available"],
                          "limits": m["write"][t]["limits"]} for t in TARGETS],
-            "engines": {"libreoffice": bool(app.svc.tools.soffice), "ocr": bool(app.svc.tools.tesseract)}}
+            "engines": {"libreoffice": bool(app.svc.tools.soffice), "ocr": bool(app.svc.tools.tesseract)},
+            "routes": m['conversions']}
 
 
 # ---------------------------------------------------------------------------------------------- merger

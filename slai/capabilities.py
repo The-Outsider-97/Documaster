@@ -12,7 +12,7 @@ from . import __version__
 from .formats import FORMATS, TARGETS, label_for
 from .services import Services
 
-SOURCES = ("pdf", "sldc", "docx", "doc", "odt", "rtf", "html", "md", "txt", "xml", "csv")
+SOURCES = ("pdf", "sldc", "docx", "doc", "odt", "rtf", "html", "md", "txt", "xml", "csv", "png", "jpeg")
 
 
 def _read_route(fmt: str, svc: Services) -> dict[str, Any]:
@@ -43,6 +43,9 @@ def _read_route(fmt: str, svc: Services) -> dict[str, Any]:
     elif fmt in ("rtf", "doc"):
         r.update(backend="LibreOffice (headless) -> DOCX -> python-docx", needs=["LibreOffice"], available=bool(t.soffice),
                  limits=["Requires LibreOffice to be installed" + ("" if t.soffice else " - not found on this machine")])
+    elif fmt in ('png', 'jpeg'):
+        r.update(backend='Pillow image decoder', needs=['Pillow'], available=has('PIL'),
+                 limits=['Image pages have no editable document text'])
     return r
 
 
@@ -72,6 +75,10 @@ def _write_route(fmt: str, svc: Services) -> dict[str, Any]:
     elif fmt == "sldc":
         base.update(backend="SLAI sldc.py dumps_package", limits=["Password encryption needs the 'cryptography' package"
                                                                    + ("" if has("cryptography") else " - not installed")])
+    elif fmt in ('png', 'jpeg'):
+        base.update(backend='Pillow / PDFium raster output', needs=['Pillow', 'pypdfium2 for PDF sources'],
+                    available=has('PIL'), limits=['Raster format: text and vectors are not selectable',
+                                                  'Each PDF page becomes an independent image'])
     return base
 
 
@@ -84,7 +91,13 @@ def matrix(svc: Services) -> dict[str, Any]:
         for d in TARGETS:
             if s == d:
                 continue
-            model_ok = reads[s]["available"] and writes[d]["available"]
+            if s in ('png', 'jpeg') or d in ('png', 'jpeg'):
+                direct = ((s in ('png', 'jpeg') and d in ('png', 'jpeg', 'pdf')) or
+                          (s == 'pdf' and d in ('png', 'jpeg')))
+                model_ok = (direct and reads[s]['available'] and writes[d]['available'] and
+                            (s != 'pdf' or t.has('pypdfium2')) and (d != 'pdf' or t.has('reportlab')))
+            else:
+                model_ok = reads[s]["available"] and writes[d]["available"]
             lo_pair = s in ("docx", "doc", "odt", "rtf", "html", "txt", "md") and d in ("pdf", "docx", "odt", "rtf", "html", "txt")
             conversions.append({"from": s, "to": d, "model": {"available": model_ok, "layoutPreserved": False},
                                 "libreoffice": {"available": bool(t.soffice), "layoutPreserved": True} if lo_pair else None})
@@ -94,7 +107,8 @@ def matrix(svc: Services) -> dict[str, Any]:
                   "top terms", "goals (minimum / maximum)", "batch of documents with totals"],
          "limits": ["Counting rules are listed in the user guide; PDFs without a text layer count 0 words unless OCR is on"]},
         {"id": "converter", "label": "Converter", "available": True,
-         "does": ["PDF, SLDC, DOCX, DOC, ODT, RTF, HTML, Markdown, text, XML, CSV to PDF, DOCX, ODT, RTF, HTML, Markdown, text, XML, SLDC",
+         "does": ["Document format conversions plus PNG/JPEG to PDF/images and PDF to per-page images",
+                  "mixed batches with per-file targets, ZIP or separate downloads",
                   "every output re-opened and checked before it is delivered", "optional layout-preserving engine (LibreOffice)",
                   "OCR for scanned PDFs (Tesseract)" if t.tesseract else "OCR needs Tesseract (not installed)"],
          "limits": ["Conversions go through the SLDC document model: text, structure, tables, links and images are kept, page layout is not"]},
@@ -104,7 +118,7 @@ def matrix(svc: Services) -> dict[str, Any]:
                   "output as PDF or any model format"],
          "limits": ["SLDC pages are logical pages (breaks, sections, headings), not printed pages", "Signatures are not carried into a merged document"]},
         {"id": "editor", "label": "PDF Editor", "available": has_all(svc, "pypdf", "pypdfium2", "reportlab"),
-         "does": ["page operations", "highlight, underline, strikeout, notes, shapes, drawing", "text, image, page-number and watermark stamps",
+         "does": ["page operations", "highlight, underline, strikeout, notes, shapes, drawing", "movable persistent text boxes, images, page-number and watermark stamps",
                   "form filling and flattening", "true redaction (pages are rasterised, result verified)", "metadata, bookmarks, passwords",
                   "lossless compression through SLAI Reader", "OCR" if t.tesseract else "OCR (needs Tesseract)", "undo / redo with revision history"],
          "limits": ["No editing of existing text in place", "Digital signatures are never added or re-applied"]},

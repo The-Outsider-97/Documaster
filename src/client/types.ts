@@ -55,7 +55,8 @@ export interface ConvertItem { id: string; name?: string; ok: boolean; report?: 
 export interface ConvertResult { results: ConvertItem[]; succeeded: number; failed: number }
 
 export interface FormatTarget { id: string; label: string; available: boolean; limits: string[] }
-export interface FormatsInfo { targets: FormatTarget[]; engines: { libreoffice: boolean; ocr: boolean } }
+export interface ConvertRoute { from: string; to: string; model: { available: boolean; layoutPreserved: boolean }; libreoffice: { available: boolean; layoutPreserved: boolean } | null }
+export interface FormatsInfo { targets: FormatTarget[]; engines: { libreoffice: boolean; ocr: boolean }; routes: ConvertRoute[] }
 
 export interface CountStats {
   words: number; uniqueWords: number; characters: number; charactersNoSpaces: number; letters: number; digits: number;
@@ -102,7 +103,9 @@ export interface PdfInfo {
   fields: FormField[];
   pages: { index: number; width: number; height: number; rotation: number }[];
   permissions: Permissions;
+  textboxes: TextBoxInfo[];
 }
+export interface TextBoxInfo { id: string; page: number; rect: number[]; text: string; size: number; color: string }
 export interface OutlineNode { title: string; page: number | null; children: OutlineNode[] }
 export interface AnnotationInfo { id: string | null; page: number; index: number; type: string; text: string; author: string; rect: number[] | null; ours: boolean }
 export interface FormField { name: string; type: string; value: string | null; options: string[] | null; readOnly: boolean; locations: { page: number; rect: number[] | null }[] }
