@@ -2,6 +2,7 @@
 import { copyFileSync, cpSync, mkdirSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { recordBuild } from './record-build.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = join(root, 'dist');
@@ -25,3 +26,5 @@ if (existsSync(publisher)) {
 } else if (!['loader.js', 'loader.css'].every(file => existsSync(join(dist, 'startup', file)))) {
   throw new Error('Set SLAI_ROOT to build with the shared SLAI startup assets.');
 }
+
+recordBuild(root, dist); // dist/build.json: what this build was made from (read by `python -m slai --check`)

@@ -47,6 +47,7 @@ export class WorkingSet {
     /** A "use an open document" picker listing documents that are open elsewhere and not yet here. */
     picker(label = 'Add an open document…') {
         const sel = select([], '');
+        sel.setAttribute('aria-label', 'Add a document that is already open'); // the first option changes, so it cannot be the name
         const refresh = () => {
             while (sel.firstChild)
                 sel.removeChild(sel.firstChild);
