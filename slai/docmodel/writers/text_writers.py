@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import html as htmllib
+import re
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
@@ -10,8 +11,9 @@ from xml.etree import ElementTree as ET
 from ...bridge import sldc
 from ..ir import heading_level, has_page_break, span_segments
 from . import WriteOptions, WriteResult
-from .common import (Notes, asset_bytes, clean, group_blocks, list_labels, table_grid, table_text)
+from .common import (Notes, asset_bytes, clean, group_blocks, list_labels, rule_look, table_grid, table_text)
 
+_RULE_MARK = "SLAIRULEMARKERQ7F3A"
 _EXT = {"image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp"}
 
 
@@ -49,6 +51,8 @@ def render_text(package: Any, opts: WriteOptions | None = None) -> str:
             alt = fig.get("alt", "")
             cap = block["text"]
             out.append("[Image" + (f": {alt}" if alt else "") + "]" + (f"\n{cap}" if cap else ""))
+        elif rule_look(block) is not None:
+            out.append("-" * 40)                              # the line a reader of plain text sees; Markdown writes it as a thematic break
         else:
             piece = _with_marks_text(block, notes)
             if piece.strip():
@@ -92,7 +96,15 @@ def write_md(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
     folder = f"{opts.stem}_files"
     names = {aid: f"{aid}.{_EXT.get(a.media_type, 'bin')}" for aid, a in package.assets.items()}
     used = _used_assets(package)
-    text = s.to_markdown(package, validate=False, asset_href=lambda aid: f"{folder}/{names.get(aid, aid)}")
+    marked = package
+    if any(rule_look(block) is not None for block in package.document["blocks"]):
+        # SLDC's Markdown converter knows nothing of rules. Each one is stood in by a plain word on a copy, and that line becomes a thematic break.
+        marked = package.copy()
+        for block in marked.document["blocks"]:
+            if rule_look(block) is not None:
+                block["text"] = _RULE_MARK
+    text = s.to_markdown(marked, validate=False, asset_href=lambda aid: f"{folder}/{names.get(aid, aid)}")
+    text = re.sub(rf"(?m)^{_RULE_MARK}[ \t]*$", "---", text)
     if opts.line_ending != "\n":
         text = text.replace("\n", opts.line_ending)
     dest.write_bytes(text.encode("utf-8"))
@@ -199,6 +211,11 @@ def write_html(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
             body.append(_html_table(b, e, pb(b)))
         elif t == "figure":
             body.append(_html_figure(package, b, e, pb(b)))
+        elif rule_look(b) is not None:
+            look = rule_look(b) or {}
+            thick = look["width_pt"] * (3 if look["style"] == "double" else 1)
+            body.append(f'<hr{bid}{pb(b) or ""} style="border:0;border-top:{thick:g}pt {look["style"]} {e(look["color"])};'
+                        f'margin:{look["space_before_pt"]:g}pt 0 {look["space_after_pt"]:g}pt;height:0">')
         else:
             if b["text"].strip():
                 body.append(f"<p{bid}{style}{pb(b) or ''}>{inline(b)}</p>")

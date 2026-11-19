@@ -9,14 +9,15 @@ from __future__ import annotations
 import io
 import re
 import zipfile
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 from xml.sax.saxutils import escape, quoteattr
 
 from ..ir import has_page_break, heading_level, span_segments
 from . import WriteOptions, WriteResult
-from .common import (Notes, PageSetup, asset_bytes, char_style_table, clean, group_blocks, page_setup,
-                     resolve_header_footer, style_table, table_grid, PAGE_SIZES_MM)
+from .common import (Notes, book_of, even_page_template, PageSetup, asset_bytes, char_style_table, clean, group_blocks, page_setup,
+                     resolve_header_footer, style_table, table_grid, table_look, PAGE_SIZES_MM, rule_look)
 
 NS = (' xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"'
       ' xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"'
@@ -86,7 +87,7 @@ def write_odt(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
         return auto_text[key]
 
     def setup_for(section: dict[str, Any] | None) -> PageSetup:
-        s = page_setup(section)
+        s = page_setup(section, None, book_of(doc, (section or {}).get("id")))
         if opts.page_size and not (section and "page" in section) and opts.page_size in PAGE_SIZES_MM:
             s.width_mm, s.height_mm = PAGE_SIZES_MM[opts.page_size]
         if opts.margins_mm is not None and not (section and "page" in section):
@@ -133,6 +134,7 @@ def write_odt(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
 
     body: list[str] = []
     extra_auto: list[str] = []
+    rule_styles: list[str] = []
     current_section = section_order[0] if section_order else None
 
     def master_break(block: dict[str, Any]) -> tuple[str | None, bool]:
@@ -179,6 +181,11 @@ def write_odt(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
                 extra_auto))
         elif t == "figure":
             body.append(_odt_figure(package, block, pictures, setup_for(sections.get(current_section)), para_style, brk, master, warnings))
+        elif rule_look(block) is not None:
+            look = rule_look(block) or {}
+            name = f"Rule{len(rule_styles) + 1}"
+            rule_styles.append(_odt_rule_style(name, look, brk, master))
+            body.append(f'<text:p text:style-name="{name}"/>')
         else:
             if not block["text"].strip():
                 if brk:
@@ -235,6 +242,7 @@ def write_odt(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
             tp.append(f'fo:background-color="{flags["background"]}"')
         auto_styles.append(f'<style:style style:name="{name}" style:family="text"><style:text-properties {" ".join(tp)}/></style:style>')
     auto_styles.extend(extra_auto)
+    auto_styles.extend(rule_styles)
     auto_styles.append('<style:style style:name="Tbl" style:family="table"><style:table-properties style:width="100%" table:align="margins"/></style:style>')
     auto_styles.append('<style:style style:name="TC" style:family="table-cell"><style:table-cell-properties fo:padding="1.2mm" fo:border="0.5pt solid #808080"/></style:style>')
     auto_styles.append('<text:list-style style:name="LB">' + "".join(
@@ -256,7 +264,7 @@ def write_odt(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
                f'<office:automatic-styles>{"".join(auto_styles)}</office:automatic-styles>'
                f'<office:body><office:text>{"".join(body)}</office:text></office:body></office:document-content>')
 
-    styles_xml = _styles_xml(page_layouts, title, doc, opts)
+    styles_xml = _styles_xml(page_layouts, title, doc, opts, warnings)
     lang = doc.get("language", "und")
     meta = (f'<?xml version="1.0" encoding="UTF-8"?>\n<office:document-meta{NS} office:version="1.2"><office:meta>'
             f'<dc:title>{_e(title)}</dc:title>'
@@ -289,10 +297,26 @@ def write_odt(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
                              "bold/italic/underline/strike/super/subscript/colour", "hyperlinks and cross-references",
                              "native footnotes", "images with alt text", "page size, margins, headers/footers with page numbers",
                              "page breaks", "document title, author, language"],
-                       lost=["columns (written as a single column)", "comments and revision history", "signatures"])
+                       lost=["columns (written as a single column)", "table of contents page numbers and leaders (entries are written as text)", "comments and revision history", "signatures"])
 
 
 _TOKENS = re.compile(r"(\t)|( +)|([^\t ]+)")
+
+
+def _odt_rule_style(name: str, look: dict[str, Any], page_break: bool, master: str | None) -> str:
+    """A paragraph style that draws a horizontal rule: an empty one-point paragraph with a bottom border and the rule's spacing, as wide as the text."""
+    w = look["width_pt"]
+    double = look["style"] == "double"
+    border = f'{w * (3 if double else 1):g}pt {look["style"]} {look["color"]}'
+    pp = [f'fo:margin-top="{look["space_before_pt"]:g}pt"', f'fo:margin-bottom="{look["space_after_pt"]:g}pt"', 'fo:margin-left="0pt"', 'fo:margin-right="0pt"',
+          'fo:text-indent="0pt"', 'fo:line-height="1pt"', f'fo:border-bottom="{border}"', 'fo:padding="0pt"']
+    if double:
+        pp.append(f'style:border-line-width-bottom="{w:g}pt {w:g}pt {w:g}pt"')
+    if page_break and not master:
+        pp.append('fo:break-before="page"')
+    attrs = f' style:master-page-name="{master}"' if master else ""
+    return (f'<style:style style:name="{name}" style:family="paragraph" style:parent-style-name="Standard"{attrs}>'
+            f'<style:paragraph-properties {" ".join(pp)}/><style:text-properties fo:font-size="1pt"/></style:style>')
 
 
 def _text_xml(text: str) -> str:
@@ -351,40 +375,138 @@ def _odt_list(items: list[dict[str, Any]], inline: Any, bookmark: Any, para_styl
     return "".join(out)
 
 
+def _odt_border(spec: dict[str, Any] | None) -> tuple[str, str]:
+    """(``fo:border`` value, ``style:border-line-width`` or "") for one edge. A double line is three strokes of a third of the width each."""
+    if not spec:
+        return "none", ""
+    width = max(0.25, float(spec["width_pt"]))
+    colour = spec["color"]
+    kind = spec.get("style", "solid")
+    if kind == "double":
+        third = f"{width / 3:.2f}pt"
+        return f"{width:.2f}pt double {colour}", f"{third} {third} {third}"
+    return f"{width:.2f}pt {kind if kind in ('dotted', 'dashed') else 'solid'} {colour}", ""
+
+
 def _odt_table(block: dict[str, Any], setup: PageSetup, cell_style: str, head_style: str, brk: bool,
                master: str | None, bm: str, e: Any, extra_auto: list[str]) -> str:
     grid = table_grid(block["table"])
+    look = table_look(block, grid)
     width = max(20.0, setup.width_mm - setup.left - setup.right)
-    col_w = width / grid.columns
     name = "Table_" + "".join(ch for ch in block["id"] if ch.isalnum())[:40]
+    serial = len(extra_auto)
+    master_attr = f' style:master-page-name="{master}"' if master else ""
+    break_attr = "" if master else ' fo:break-before="page"'
     table_style = "Tbl"
-    if brk or master:
-        table_style = f"Tbl_{len(extra_auto) + 1}"
-        master_attr = f' style:master-page-name="{master}"' if master else ""
-        break_attr = "" if master else ' fo:break-before="page"'
+    col_styles: list[str] = []
+    row_styles: list[str] = []
+    cell_styles: dict[tuple, str] = {}
+
+    if look is None:
+        if brk or master:
+            table_style = f"Tbl_{serial + 1}"
+            extra_auto.append(f'<style:style style:name="{table_style}" style:family="table"{master_attr}><style:table-properties '
+                              f'style:width="100%" table:align="margins"{break_attr}/></style:style>')
+    else:
+        # widths: the ones the person set, otherwise equal columns across the text width (how the editor lays a table out)
+        widths_mm = look.get("column_widths_mm")
+        fit = look.get("fit", "auto")
+        if isinstance(widths_mm, list) and len(widths_mm) == grid.columns:
+            widths = [float(w) for w in widths_mm]
+            if fit == "window":
+                widths = [w * width / sum(widths) for w in widths]
+        else:
+            total = min(float(look["width_mm"]), width) if look.get("width_mm") and fit != "window" else width
+            widths = [total / grid.columns] * grid.columns
+        if sum(widths) > width:
+            widths = [w * width / sum(widths) for w in widths]
+        align = look.get("align") if look.get("align") in ("center", "right") else "left"
+        table_style = f"Tbl_{serial + 1}"
+        indent = f' fo:margin-left="{float(look["indent_mm"]):.2f}mm"' if look.get("indent_mm") and align == "left" else ""
         extra_auto.append(f'<style:style style:name="{table_style}" style:family="table"{master_attr}><style:table-properties '
-                          f'style:width="100%" table:align="margins"{break_attr}/></style:style>')
-    cols = f'<table:table-column table:number-columns-repeated="{grid.columns}"/>'
+                          f'style:width="{sum(widths):.2f}mm" table:align="{align}"{indent}{break_attr if not master and brk else ""}/></style:style>')
+        for c, w in enumerate(widths):
+            name_c = f"{table_style}_C{c}"
+            extra_auto.append(f'<style:style style:name="{name_c}" style:family="table-column"><style:table-column-properties style:column-width="{w:.2f}mm"/></style:style>')
+            col_styles.append(name_c)
+        heights = look.get("row_heights_mm")
+        for r in range(len(grid.rows)):
+            if isinstance(heights, list) and len(heights) == len(grid.rows):
+                name_r = f"{table_style}_R{r}"
+                attr = "row-height" if look.get("row_height_rule") == "exact" else "min-row-height"
+                extra_auto.append(f'<style:style style:name="{name_r}" style:family="table-row"><style:table-row-properties style:{attr}="{float(heights[r]):.2f}mm"/></style:style>')
+                row_styles.append(name_r)
+            else:
+                row_styles.append("")
+
+    def cell_style_for(r: int, c: int, cell: dict[str, Any]) -> str:
+        if look is None:
+            return "TC"
+        cs, rs = cell.get("colspan", 1), cell.get("rowspan", 1)
+        mine = look["cells"].get(f"{r},{c}", {})
+        edges = (look["h"].get(f"{r},{c}"), look["h"].get(f"{r + rs},{c}"), look["v"].get(f"{r},{c}"), look["v"].get(f"{r},{c + cs}"))
+        key = (mine.get("fill"), mine.get("valign"), mine.get("padding_mm"), tuple(tuple(sorted(x.items())) if x else None for x in edges))
+        if key not in cell_styles:
+            name_s = f"{table_style}_S{len(cell_styles)}"
+            cell_styles[key] = name_s
+            props = ""
+            widths_extra = []
+            for side, spec in zip(("top", "bottom", "left", "right"), edges):
+                value, line_width = _odt_border(spec)
+                props += f' fo:border-{side}="{value}"'
+                if line_width:
+                    widths_extra.append(f'style:border-line-width-{side}="{line_width}"')
+            props += "".join(" " + w for w in widths_extra)
+            pad = mine.get("padding_mm", look.get("cell_padding_mm"))
+            props += f' fo:padding="{float(pad):.2f}mm"' if pad is not None else ' fo:padding="1.2mm"'
+            if mine.get("fill"):
+                props += f' fo:background-color="{mine["fill"]}"'
+            if mine.get("valign"):
+                props += f' style:vertical-align="{ {"middle": "middle", "bottom": "bottom", "top": "top"}[mine["valign"]] }"'
+            extra_auto.append(f'<style:style style:name="{name_s}" style:family="table-cell"><style:table-cell-properties{props}/></style:style>')
+        return cell_styles[key]
+
+    text_styles: dict[tuple, str] = {}
+
+    def text_style_for(mine: dict[str, Any]) -> str | None:
+        colour, bold = mine.get("color"), bool(mine.get("bold"))
+        if not colour and not bold:
+            return None
+        key = (colour, bold)
+        if key not in text_styles:
+            name_t = f"{table_style}_T{len(text_styles)}"
+            text_styles[key] = name_t
+            attrs = (f' fo:color="{colour}"' if colour else "") + (' fo:font-weight="bold" style:font-weight-asian="bold" style:font-weight-complex="bold"' if bold else "")
+            extra_auto.append(f'<style:style style:name="{name_t}" style:family="text"><style:text-properties{attrs}/></style:style>')
+        return text_styles[key]
+
+    cols = "".join(f'<table:table-column table:style-name="{c}"/>' for c in col_styles) if col_styles else f'<table:table-column table:number-columns-repeated="{grid.columns}"/>'
     rows_xml = []
     for r, row in enumerate(grid.rows):
         cells = []
-        for cell in row:
+        for c, cell in enumerate(row):
             if cell is None:
                 cells.append("<table:covered-table-cell/>")
                 continue
-            attrs = ' table:style-name="TC" office:value-type="string"'
+            attrs = f' table:style-name="{cell_style_for(r, c, cell)}" office:value-type="string"'
             if cell.get("colspan", 1) > 1:
                 attrs += f' table:number-columns-spanned="{cell["colspan"]}"'
             if cell.get("rowspan", 1) > 1:
                 attrs += f' table:number-rows-spanned="{cell["rowspan"]}"'
-            style = head_style if r < grid.header_rows else cell_style
-            paragraphs = "".join(f'<text:p text:style-name="{style}">{_text_xml(line)}</text:p>'
-                                 for line in (cell["text"].split("\n") if cell["text"] else [""]))
+            style = head_style if look is None and r < grid.header_rows else cell_style
+            span = text_style_for(look["cells"].get(f"{r},{c}", {})) if look is not None else None
+            paragraphs = ""
+            for line in (cell["text"].split("\n") if cell["text"] else [""]):
+                inner = _text_xml(line)
+                if span and inner:
+                    inner = f'<text:span text:style-name="{span}">{inner}</text:span>'
+                paragraphs += f'<text:p text:style-name="{style}">{inner}</text:p>'
             cells.append(f"<table:table-cell{attrs}>{paragraphs}</table:table-cell>")
-        rows_xml.append(f"<table:table-row>{''.join(cells)}</table:table-row>")
+        row_attr = f' table:style-name="{row_styles[r]}"' if row_styles and row_styles[r] else ""
+        rows_xml.append(f"<table:table-row{row_attr}>{''.join(cells)}</table:table-row>")
     head = "".join(rows_xml[:grid.header_rows])
     tail = "".join(rows_xml[grid.header_rows:])
-    return (f'<table:table table:name="{name}" table:style-name="{table_style}"><table:table-column table:number-columns-repeated="{grid.columns}"/>'
+    return (f'<table:table table:name="{name}" table:style-name="{table_style}">{cols}'
             + (f"<table:table-header-rows>{head}</table:table-header-rows>" if head else "") + tail + "</table:table>")
 
 
@@ -418,7 +540,7 @@ def _odt_figure(package: Any, block: dict[str, Any], pictures: dict[str, tuple[s
 
 
 def _styles_xml(layouts: list[tuple[str, str, PageSetup, dict[str, Any] | None]], title: str, doc: dict[str, Any],
-                opts: WriteOptions) -> str:
+                opts: WriteOptions, warnings: list[str]) -> str:
     base_pt = opts.font_size_pt
     font = opts.font_family or "Liberation Sans"
     styles = [
@@ -440,8 +562,19 @@ def _styles_xml(layouts: list[tuple[str, str, PageSetup, dict[str, Any] | None]]
     layout_xml = []
     master_xml = []
     for layout_name, master_name, setup, section in layouts:
+        # ODF lets a left-hand page have its own header only in a layout whose usage is "mirrored", which also turns the margins over. With equal left and
+        # right margins that changes nothing on the page, so odd and even pages without mirrored margins use it; with unequal margins they cannot.
+        facing = setup.mirror
+        if setup.odd_even and not setup.mirror:
+            if abs(setup.left - setup.right) < 0.01:
+                facing = True
+            else:
+                setup = replace(setup, odd_even=False, even_header=None, even_footer=None)
+                warnings.append("ODT cannot give left-hand pages their own header and footer when the left and right margins differ and the margins are not mirrored; "
+                                "the ordinary header and footer are used on every page of that section. Make the margins equal, or use mirrored margins, or export to PDF, DOCX or RTF.")
+        usage = ' style:page-usage="mirrored"' if facing else ""        # not inline: a quote inside an f-string expression is a syntax error before Python 3.12
         layout_xml.append(
-            f'<style:page-layout style:name="{layout_name}"><style:page-layout-properties fo:page-width="{_mm(setup.width_mm)}" '
+            f'<style:page-layout style:name="{layout_name}"{usage}><style:page-layout-properties fo:page-width="{_mm(setup.width_mm)}" '
             f'fo:page-height="{_mm(setup.height_mm)}" style:print-orientation="{"landscape" if setup.width_mm > setup.height_mm else "portrait"}" '
             f'fo:margin-top="{_mm(setup.top)}" fo:margin-bottom="{_mm(setup.bottom)}" fo:margin-left="{_mm(setup.left)}" '
             f'fo:margin-right="{_mm(setup.right)}"/><style:header-style/><style:footer-style/></style:page-layout>')
@@ -455,9 +588,15 @@ def _styles_xml(layouts: list[tuple[str, str, PageSetup, dict[str, Any] | None]]
             template = (section or {}).get(edge)
             if template is None and edge == "footer" and opts.page_numbers and section is None:
                 template = {"center": "{page}"}
-            if not template:
+            even = even_page_template(edge, template, setup) if (setup.odd_even or (setup.mirror and setup.mirror_edges)) else None
+            if not template and not even:
                 continue
-            parts.append(f"<style:{edge}>" + _hf_paragraph(template, header_style, title) + f"</style:{edge}>")
+            if template:
+                parts.append(f"<style:{edge}>" + _hf_paragraph(template, header_style, title) + f"</style:{edge}>")
+            else:                                                      # a left-hand header needs the right-hand one to exist, even if it is empty
+                parts.append(f'<style:{edge}><text:p text:style-name="{header_style}"/></style:{edge}>')
+            if even and (even != template or not template):           # left-hand pages: their own text, or the ordinary one with the page number kept on the outer edge
+                parts.append(f"<style:{edge}-left>" + _hf_paragraph(even, header_style, title) + f"</style:{edge}-left>")
         master_xml.append(f'<style:master-page style:name="{master_name}" style:page-layout-name="{layout_name}">{"".join(parts)}</style:master-page>')
         if master_name != "Standard":
             pass

@@ -306,7 +306,7 @@ def _docx_text(shape:dict[str,Any])->str:
     return f'<wps:txbx><w:txbxContent><w:p><w:pPr><w:jc w:val="{alignment}"/></w:pPr>{"".join(runs)}</w:p></w:txbxContent></wps:txbx>'
 
 
-def add_docx_shape(document:Any,block:dict[str,Any],setup:Any)->list[str]:
+def add_docx_shape(document:Any,block:dict[str,Any],setup:Any,*,paragraph:Any=None,anchor:dict[str,Any]|None=None,ident:int|None=None)->list[str]:
     """Append a native WordprocessingShape (Word 2010+) to a document paragraph.
 
     This path supports editable geometry, shape-owned text, opacity, one shadow,
@@ -319,19 +319,27 @@ def add_docx_shape(document:Any,block:dict[str,Any],setup:Any)->list[str]:
     h=round(float(shape["height_mm"])*36000)
     if not 72000<=w<=36_000_000 or not 72000<=h<=36_000_000:
         raise ValueError("Shape dimensions must be from 2 to 1000 mm")
-    ident=500000+len(document.element.xpath(".//wp:docPr"))
+    if ident is None:
+        ident=500000+len(document.element.xpath(".//wp:docPr"))
     name=escape(f"Writer {kind} shape",quote=True)
     alt=escape((shape.get("text") or {}).get("content","")[:500],quote=True)
     extent=f'<wp:extent cx="{w}" cy="{h}"/>'
     docpr=f'<wp:docPr id="{ident}" name="{name}" descr="{alt}"/><wp:cNvGraphicFramePr/>'
     layout=shape.get("layout") or {}
-    if layout.get("mode")=="floating":
-        x=round((float(setup.left)+float(layout.get("x_mm",0)))*36000)
-        y=round((float(setup.top)+float(layout.get("y_mm",0)))*36000)
-        behind=1 if layout.get("layer")=="behind_text" else 0
-        z=max(-1000,min(1000,int(shape.get("z_index",0))))
-        relative=1000000+z*100
-        wrap=layout.get("wrap","none")
+    if anchor is not None or layout.get("mode")=="floating":
+        if anchor is not None:                    # a header or footer shape: a fixed place on the page, as Writer's band placed it
+            x=round(float(anchor["x_mm"])*36000)
+            y=round(float(anchor["y_mm"])*36000)
+            behind=1 if anchor.get("behind") else 0
+            relative=int(anchor.get("relative_height",251658240))
+            wrap="none"
+        else:
+            x=round((float(setup.left)+float(layout.get("x_mm",0)))*36000)
+            y=round((float(setup.top)+float(layout.get("y_mm",0)))*36000)
+            behind=1 if layout.get("layer")=="behind_text" else 0
+            z=max(-1000,min(1000,int(shape.get("z_index",0))))
+            relative=1000000+z*100
+            wrap=layout.get("wrap","none")
         wrapxml=('<wp:wrapSquare wrapText="bothSides"/>' if wrap=="square" else
                  '<wp:wrapTopAndBottom/>' if wrap=="top_bottom" else '<wp:wrapNone/>')
         container=(f'<wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" '
@@ -383,7 +391,8 @@ def add_docx_shape(document:Any,block:dict[str,Any],setup:Any)->list[str]:
     root=(f'<w:drawing xmlns:w="{_WORD_W}" xmlns:wp="{_WORD_WP}" '
           f'xmlns:a="{_WORD_A}" xmlns:wps="{_WORD_WPS}">'
           f'{container.format(graphic=geometry)}</w:drawing>')
-    paragraph=document.add_paragraph()
+    if paragraph is None:
+        paragraph=document.add_paragraph()
     paragraph.add_run()._r.append(parse_xml(root))
     messages=[]
     if len(shadows)>1:

@@ -18,8 +18,12 @@ from ...errors import DependencyMissing
 from .. import fonts as fontmod
 from ..ir import has_page_break, heading_level, span_segments
 from . import WriteOptions, WriteResult
-from .common import (Notes, PAGE_SIZES_MM, PageSetup, asset_bytes, char_style_table, clean, format_number, group_blocks,
-                     list_labels, page_setup, resolve_header_footer, style_table, table_grid)
+from .common import (Notes, PAGE_SIZES_MM, PageSetup, book_of, asset_bytes, char_style_table, clean, column_widths, format_number, group_blocks,
+                     list_labels, page_setup, resolve_header_footer, even_page_template, style_table, table_grid, table_look, hex_rgb,
+                     border_runs, rule_look)
+from .band_shapes import page_items, place as place_band
+from .vector_shapes import draw_vector
+from .toc_layout import INLINE_GAP_EM, leader_gap_pt, leader_mark, place_entry, plan_entry, resolve_look
 
 MM = 72.0 / 25.4
 _registered: dict[str, str] = {}
@@ -40,7 +44,8 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
         from reportlab.pdfgen import canvas as canvasmod
         from reportlab.platypus import (BaseDocTemplate, Flowable, Frame, Image, NextPageTemplate, PageBreak, PageTemplate,
                                         Paragraph, Spacer, Table, TableStyle)
-        from reportlab.platypus.doctemplate import LayoutError
+        from reportlab.platypus.doctemplate import FrameBreak, Indenter, LayoutError
+        from reportlab.platypus.flowables import BalancedColumns, KeepInFrame, KeepTogether
     except ImportError as exc:
         raise DependencyMissing("Writing PDF needs the reportlab package", details={"package": "reportlab"}) from exc
 
@@ -178,6 +183,12 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
     toc_titles = {meta["id"]: meta for block in doc["blocks"]
                   if (meta := block.get("extensions", {}).get("slai.sldc.toc"))
                   and meta.get("role") == "title" and isinstance(meta.get("id"), str)}
+    # Writer's own look of a table of contents (leader kind, where the page number goes). Optional: a table without it keeps the native look.
+    toc_looks = {block["extensions"]["slai.sldc.toc"]["id"]: block["extensions"]["slai.writer.toc_style"] for block in doc["blocks"]
+                 if isinstance((block.get("extensions") or {}).get("slai.writer.toc_style"), dict)
+                 and isinstance((block["extensions"].get("slai.sldc.toc") or {}).get("id"), str)}
+    # Writer's column layouts per section (separator line, flow, continuous). Optional as well.
+    column_layouts = (((doc.get("extensions") or {}).get("slai.writer") or {}).get("column_layouts") or {})
 
     # ---------------------------------------------------------------- inline markup
     def markup_text(text: str, mono: bool) -> str:
@@ -277,7 +288,7 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
 
     # ---------------------------------------------------------------- page templates
     def setup_for(section: dict[str, Any] | None) -> PageSetup:
-        s = page_setup(section)
+        s = page_setup(section, None, book_of(doc, (section or {}).get("id")))
         if opts.page_size and not (section and "page" in section) and opts.page_size in PAGE_SIZES_MM:
             s.width_mm, s.height_mm = PAGE_SIZES_MM[opts.page_size]
         if opts.margins_mm is not None and not (section and "page" in section):
@@ -288,20 +299,76 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
     section_info: dict[str, dict[str, Any]] = {}   # template id -> data for the final pass
     templates: list[PageTemplate] = []
 
+    class BookTemplate(PageTemplate):
+        """A page template whose frames sit one way on right-hand pages and the mirrored way on left-hand ones."""
+
+        def __init__(self, *args: Any, even_shift: float = 0.0, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            self._odd_x = [frame._x1 for frame in self.frames]
+            self._even_shift = even_shift
+
+        def beforeDrawPage(self, canv: Any, doc: Any) -> None:  # noqa: N802 - reportlab API
+            move = self._even_shift if doc.page % 2 == 0 else 0.0
+            for frame, x in zip(self.frames, self._odd_x):
+                frame._x1 = x + move
+            canv._dm_even_shift = move
+            super().beforeDrawPage(canv, doc)
+
+    band_state: dict[str, Any] = {"last": None}
+
+    def draw_band_shapes(canvas: Any, section: dict[str, Any] | None, physical: int, first: bool, setup: PageSetup, pw: float, ph: float, layer: str) -> None:
+        """The shapes of the headers and footers on one page, behind the text or in front of it, as vector drawing (Writer's own shapes, the same painter as the body's)."""
+        sid = (section or {}).get("id")
+        for edge in ("header", "footer"):
+            items, mirrored = page_items(doc, sid, edge, physical, first)
+            for item in items:
+                if item.get("layer", "front") != layer:
+                    continue
+                at = place_band(item, edge, pw / MM, ph / MM, setup.left_for(physical), setup.right_for(physical), mirrored)
+                canvas.saveState()
+                canvas.translate(at["x"] * MM, ph - (at["y"] + at["h"]) * MM)
+                try:
+                    draw_vector(canvas, {**item["shape"], "width_mm": at["w"], "height_mm": at["h"]}, at["w"] * MM, at["h"] * MM)
+                finally:
+                    canvas.restoreState()
+
     def make_template(tid: str, section: dict[str, Any] | None) -> PageSetup:
         s = setup_for(section)
         pw, ph = s.width_mm * MM, s.height_mm * MM
         usable_w = pw - (s.left + s.right) * MM
         gap = s.column_gap_mm * MM
         cols = max(1, s.columns)
-        col_w = (usable_w - gap * (cols - 1)) / cols
-        frames = [Frame(s.left * MM + i * (col_w + gap), s.bottom * MM, col_w, ph - (s.top + s.bottom) * MM,
+        layout = column_layouts.get((section or {}).get("id")) or {}
+        unequal = column_widths(layout.get("widths_mm"), s)
+        widths = [w * MM for w in unequal] if unequal else [(usable_w - gap * (cols - 1)) / cols] * cols
+        xs = [s.left * MM]
+        for w in widths[:-1]:
+            xs.append(xs[-1] + w + gap)
+        frames = [Frame(xs[i], s.bottom * MM, widths[i], ph - (s.top + s.bottom) * MM,
                         leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0, id=f"{tid}-c{i}") for i in range(cols)]
+        rule = layout.get("rule") if cols > 1 else None
+        rule_x = [xs[i] - gap / 2 for i in range(1, cols)]
 
-        def on_page(canvas: Any, document: Any, _tid: str = tid) -> None:
+        def on_page(canvas: Any, document: Any, _tid: str = tid, _rule: Any = rule, _x: Any = rule_x, _b: float = s.bottom * MM,
+                    _h: float = ph - (s.top + s.bottom) * MM) -> None:
             canvas._dm_template = _tid
+            if document.page <= 1:
+                band_state["last"] = None
+            draw_band_shapes(canvas, section, document.page, band_state["last"] != _tid, s, pw, ph, "behind")      # behind the text: drawn before it
+            band_state["last"] = _tid
+            if isinstance(_rule, dict):                          # the line between the columns of a page-wide column layout
+                canvas.saveState()
+                canvas.setStrokeColor(colors.HexColor(_rule.get("color", "#000000")))
+                canvas.setLineWidth(float(_rule.get("width_pt", 0.75)))
+                for x in _x:
+                    shifted = x + getattr(canvas, "_dm_even_shift", 0.0)
+                    canvas.line(shifted, _b, shifted, _b + _h)
+                canvas.restoreState()
 
-        templates.append(PageTemplate(id=tid, frames=frames, onPage=on_page, pagesize=(pw, ph)))
+        # Mirrored margins: a left-hand page (every even one, by its position in the document) has the margins the other way round. Its frames move by the
+        # difference; the text width is the same on both sides, so nothing reflows when a page changes side.
+        shift = (s.right - s.left) * MM if s.mirror else 0.0
+        templates.append(BookTemplate(id=tid, frames=frames, onPage=on_page, pagesize=(pw, ph), even_shift=shift))
         section_info[tid] = {"section": section, "setup": s, "page": (pw, ph)}
         return s
 
@@ -314,7 +381,7 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
 
     # ---------------------------------------------------------------- story
     story: list[Any] = []
-    state = {"emitted": False, "outline_level": 0, "degraded": False}
+    state = {"emitted": False, "outline_level": 0, "degraded": False, "regions_off": False}
     current_section = first_id
 
     def emit(flowable: Any) -> None:
@@ -325,6 +392,38 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
         if state["emitted"]:
             story.append(PageBreak())
             state["emitted"] = False
+
+    class RuleLine(Flowable):
+        """A horizontal rule: one drawn line (two for the double style) from the left to the right edge of the frame or column it sits in."""
+
+        def __init__(self, look: dict[str, Any], block_id: str) -> None:
+            super().__init__()
+            self.look = look
+            self._sldc_block_id = block_id
+            self.spaceBefore = look["space_before_pt"]
+            self.spaceAfter = look["space_after_pt"]
+
+        def wrap(self, availWidth: float, availHeight: float) -> tuple[float, float]:  # noqa: N802
+            self.width = availWidth
+            self.height = self.look["width_pt"] * (3 if self.look["style"] == "double" else 1)
+            return availWidth, self.height
+
+        def draw(self) -> None:
+            c, look = self.canv, self.look
+            w = look["width_pt"]
+            r, g, b = hex_rgb(look["color"]) or (0.25, 0.25, 0.25)
+            c.saveState()
+            c.setStrokeColorRGB(r, g, b)
+            c.setLineWidth(w)
+            c.setLineCap(1 if look["style"] == "dotted" else 0)
+            if look["style"] == "dashed":
+                c.setDash(w * 4, w * 3)
+            elif look["style"] == "dotted":
+                c.setDash(0, w * 2)
+            ys = (w * 0.5, w * 2.5) if look["style"] == "double" else (w * 0.5,)
+            for y in ys:
+                c.line(0, y, self.width, y)
+            c.restoreState()
 
     class Outline(Flowable):
         def __init__(self, text: str, level: int, key: str) -> None:
@@ -351,10 +450,135 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
         def draw(self) -> None:
             self.canv.bookmarkPage(self.key)
 
+    class LeaderRule(Flowable):
+        """A thin rule on the baseline: the "solid" leader of a table of contents."""
+
+        def __init__(self, width: float, height: float, size: float) -> None:
+            super().__init__()
+            self.width, self.height, self.size = max(2.0, width), height, size
+
+        def wrap(self, *_: Any) -> tuple[float, float]:
+            return self.width, self.height
+
+        def draw(self) -> None:
+            self.canv.setLineWidth(0.5)
+            self.canv.setStrokeColor(colors.HexColor("#666666"))
+            self.canv.line(0, self.size * 0.22, self.width, self.size * 0.22)
+
+    class TocEntry(Flowable):
+        """One entry of a table of contents: its text (which may wrap), the leader after it and the page number, placed by ``toc_layout`` from the real widths
+        of the text, the number and the leader's marks. The number sits on the last line of the text (on the first when it comes before it)."""
+
+        def __init__(self, xml: str, number_xml: str, number: str, style: Any, look: dict[str, Any], column_w: float, block_id: str) -> None:
+            super().__init__()
+            self.xml, self.number_xml, self.number, self.style, self.look, self.column_w = xml, number_xml, number, style, look, column_w
+            self._sldc_block_id = block_id
+            self.spaceBefore, self.spaceAfter = style.spaceBefore, style.spaceAfter
+            self.keepWithNext = getattr(style, "keepWithNext", 0)
+            self.hAlign = "LEFT"
+            self._ready: tuple[float, float] | None = None
+
+        def wrap(self, availWidth: float, availHeight: float) -> tuple[float, float]:  # noqa: N802
+            st, look = self.style, self.look
+            plain = ParagraphStyle("toc-measure", parent=st, leftIndent=0, rightIndent=0, firstLineIndent=0, alignment=TA_LEFT, spaceBefore=0, spaceAfter=0)
+            self.number_w = text_width(self.number_xml, plain)
+            self.mark = leader_mark(look)
+            self.mark_w = text_width(markup_text(self.mark, False), plain) if self.mark else 0.0
+            self.gap = leader_gap_pt(look, st.fontSize)
+            inline_gap = INLINE_GAP_EM * st.fontSize
+            self.plan = plan_entry(look, availWidth, st.leftIndent, st.rightIndent, max(self.column_w, self.number_w), self.number_w, inline_gap)
+            x0, x1 = self.plan["text"]
+            self.para = Paragraph(self.xml, ParagraphStyle("toc-text", parent=st, leftIndent=0, rightIndent=0, firstLineIndent=0, spaceBefore=0, spaceAfter=0))
+            _, height = self.para.wrap(x1 - x0, availHeight)
+            widths = self.para.getActualLineWidths0() or [0.0]
+            room = x1 - x0
+            align = st.alignment
+
+            def extent(index: int) -> tuple[float, float]:
+                width = widths[index]
+                if align == TA_JUSTIFY and index < len(widths) - 1:
+                    return x0, x1
+                shift = (room - width) / 2 if align == TA_CENTER else room - width if align == TA_RIGHT else 0.0
+                return x0 + shift, x0 + shift + width
+            self.lines = len(widths)
+            self.placed = place_entry(look, self.plan, self.number_w, extent(0), extent(len(widths) - 1), self.mark_w, self.gap, inline_gap)
+            self.width, self.height = availWidth, height
+            return availWidth, height
+
+        def split(self, availWidth: float, availHeight: float) -> list[Any]:  # noqa: N802
+            return []
+
+        def draw(self) -> None:
+            canv, st, placed = self.canv, self.style, self.placed
+            self.para.drawOn(canv, self.plan["text"][0], 0)
+            if placed["number_x"] is None:
+                return
+            leading = st.leading
+            first_line = self.look["position"] == "left"
+            baseline = self.height - first_baseline(self.para) - (0 if first_line else (self.lines - 1) * leading)
+            number = Paragraph(self.number_xml, ParagraphStyle("toc-number", parent=st, leftIndent=0, rightIndent=0, firstLineIndent=0, alignment=TA_LEFT,
+                                                               spaceBefore=0, spaceAfter=0))
+            number.wrap(self.number_w + 4, leading * 2)
+            number.drawOn(canv, placed["number_x"], baseline + first_baseline(number) - number.height)
+            leader = placed["leader"]
+            if not leader:
+                return
+            canv.saveState()
+            canv.setFillColor(st.textColor)
+            canv.setStrokeColor(st.textColor)
+            if leader["kind"] == "solid":
+                canv.setLineWidth(max(0.4, st.fontSize * 0.045))
+                canv.line(leader["x0"], baseline - st.fontSize * 0.1, leader["x1"], baseline - st.fontSize * 0.1)
+            else:
+                canv.setFont(body_font, st.fontSize)
+                for i in range(leader["count"]):
+                    canv.drawString(leader["x0"] + i * leader["pitch"], baseline, self.mark)
+            canv.restoreState()
+
+    def first_baseline(paragraph: Any) -> float:
+        """How far the first baseline of a wrapped paragraph lies below its top (ReportLab's own rule, which depends on its configuration)."""
+        from reportlab import rl_config
+        lines = paragraph.blPara
+        return float(lines.fontSize) if getattr(rl_config, "paraFontSizeHeightOffset", 0) else float(getattr(lines, "ascent", lines.fontSize))
+
+    def text_width(xml: str, style: Any) -> float:
+        probe = Paragraph(xml, style)
+        probe.wrap(100000, 100000)
+        return float((probe.getActualLineWidths0() or [0.0])[0])
+
+    def flagged(xml: str, flags: dict[str, Any]) -> str:
+        for flag, tag in (("bold", "b"), ("italic", "i"), ("underline", "u"), ("strike", "strike")):
+            if flags.get(flag):
+                xml = f"<{tag}>{xml}</{tag}>"
+        if flags.get("color"):
+            xml = f'<font color="{flags["color"]}">{xml}</font>'
+        return xml
+
+    column_cache: dict[tuple[str, int], float] = {}
+
+    def column_for(toc_id: str, look: dict[str, Any]) -> float:
+        """The width of the page-number column of a table of contents: what the person set, or the widest page number of its entries (so the numbers line up)."""
+        if look["number_column_pt"]:
+            return float(look["number_column_pt"])
+        key = (toc_id, id(reference_labels))
+        if key not in column_cache:
+            widest = 0.0
+            for other in doc["blocks"]:
+                meta = (other.get("extensions") or {}).get("slai.sldc.toc") or {}
+                if meta.get("role") != "entry" or meta.get("id") != toc_id or not reference_labels.get(meta.get("heading", "")):
+                    continue
+                style, flags = style_for(other, st_body)
+                if other.get("style") is None and int(meta.get("level", 1)) == 1:
+                    flags["bold"] = True
+                plain = ParagraphStyle("toc-measure", parent=style, leftIndent=0, rightIndent=0, firstLineIndent=0, alignment=TA_LEFT, spaceBefore=0, spaceAfter=0)
+                widest = max(widest, text_width(flagged(markup_text(reference_labels[meta["heading"]], False), flags), plain))
+            column_cache[key] = widest
+        return column_cache[key]
+
     class TrackedParagraph(Paragraph):
         """Keep the originating SLDC block ID even when ReportLab splits a paragraph."""
 
-        def __init__(self, xml: str, style: Any, block_id: str, **kwargs: Any) -> None:
+        def __init__(self, xml: str, style: Any, block_id: str = "", **kwargs: Any) -> None:
             super().__init__(xml, style, **kwargs)
             self._sldc_block_id = block_id
 
@@ -364,19 +588,80 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
                 piece._sldc_block_id = self._sldc_block_id
             return pieces
 
+    def warn_once(text: str) -> None:
+        if text not in warnings:
+            warnings.append(text)
+
+    def flush_region() -> None:
+        """Close a run of blocks that sits in its own columns in the middle of a page: ReportLab balances it across the columns."""
+        sid = state.get("region")
+        if sid is None:
+            return
+        state["region"] = None
+        start = state["region_start"]
+        items = story[start:]
+        del story[start:]
+        if not items:
+            return
+        s = section_info[sid]["setup"]
+        gap = s.column_gap_mm * MM
+        rule = (column_layouts.get(sid) or {}).get("rule")
+        extra: dict[str, Any] = {}
+        if isinstance(rule, dict):
+            extra = {"vLinesStrokeColor": colors.HexColor(rule.get("color", "#000000")), "vLinesStrokeWidth": float(rule.get("width_pt", 0.75))}
+        # BalancedColumns pads the outer columns by half a gap; widening the frame by that much keeps the text flush with the margins.
+        story.append(Indenter(-gap / 2, -gap / 2))
+        story.append(BalancedColumns(items, nCols=s.columns, needed=2 * s.columns * base, innerPadding=gap, leftPadding=gap / 2, rightPadding=gap / 2,
+                                     topPadding=0, bottomPadding=0, **extra))
+        story.append(Indenter(gap / 2, gap / 2))
+        state["emitted"] = True
+
+    def same_sheet(a: PageSetup, b: PageSetup) -> bool:
+        return (a.width_mm, a.height_mm, a.top, a.right, a.bottom, a.left, a.mirror, a.gutter, a.gutter_position) == \
+            (b.width_mm, b.height_mm, b.top, b.right, b.bottom, b.left, b.mirror, b.gutter, b.gutter_position)
+
     def start_block(block: dict[str, Any]) -> None:
         nonlocal current_section
         sid = block.get("section")
         if sid and sid != current_section:
+            flush_region()
             if sid not in made:
                 make_template(sid, sections.get(sid))
                 made.add(sid)
-            story.append(NextPageTemplate(sid))
+            kind = None
+            if (column_layouts.get(sid) or {}).get("continuous") is True and not state["regions_off"]:
+                here, there = section_info[state["base"]]["setup"], section_info[sid]["setup"]
+                if same_sheet(here, there):
+                    kind = "same" if there.columns == here.columns else "region" if here.columns == 1 and there.columns > 1 else None
+                if kind is None and state["emitted"]:
+                    warn_once("Columns that change in the middle of a page only keep the page when the page itself has one column; "
+                              "the PDF starts a new page for them")
+            if kind == "region":
+                if column_widths((column_layouts.get(sid) or {}).get("widths_mm"), section_info[sid]["setup"]):
+                    warn_once("Unequal column widths of a selection that shares a page are written as equal columns in the PDF")
+                state.update(region=sid, region_start=len(story))
+                current_section = sid
+            elif kind == "same":
+                story.append(NextPageTemplate(sid))
+                state["base"] = sid
+                current_section = sid
+            else:
+                story.append(NextPageTemplate(sid))
+                page_break()
+                current_section = sid
+                state["emitted"] = False
+                state["base"] = sid
+        elif has_page_break(block) and state.get("region") is None:
             page_break()
-            current_section = sid
-            state["emitted"] = False
-        elif has_page_break(block):
-            page_break()
+        if (block.get("extensions") or {}).get("slai.writer.column_break"):
+            if state.get("region") is not None:
+                warn_once("A column break inside columns that share a page with other text is not written to the PDF (the columns are balanced instead)")
+            elif section_info[current_section]["setup"].columns > 1:
+                if state["emitted"]:
+                    story.append(FrameBreak())
+                    state["emitted"] = False
+            else:
+                page_break()
         if block["id"] in xref_ids:
             story.append(Anchor(block["id"]))
 
@@ -384,7 +669,12 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
         s = section_info[section_id]["setup"]
         usable = (s.width_mm - s.left - s.right) * MM
         cols = max(1, s.columns)
-        return (usable - s.column_gap_mm * MM * (cols - 1)) / cols
+        unequal = column_widths((column_layouts.get((section_info[section_id]["section"] or {}).get("id")) or {}).get("widths_mm"), s)
+        if unequal and state.get("region") != section_id:           # a balanced region (ReportLab) has equal columns
+            return min(unequal) * MM
+        width = (usable - s.column_gap_mm * MM * (cols - 1)) / cols
+        # ReportLab refuses a table or picture that is even a rounding error wider than a column of a balanced region
+        return width - 0.5 if state.get("region") == section_id else width
 
     def frame_height(section_id: str) -> float:
         s = section_info[section_id]["setup"]
@@ -397,6 +687,9 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
             for row in grid.rows:
                 rows.append(" | ".join(c["text"].replace("\n", " ") for c in row if c is not None))
             return [Paragraph(markup_text(r, False), st_cell) for r in rows]
+        look = table_look(block, grid)
+        cells_look = (look or {}).get("cells", {})
+        pad_default = (float(look["cell_padding_mm"]) * MM if look and look.get("cell_padding_mm") is not None else None)
         data: list[list[Any]] = []
         weights = [6.0] * grid.columns
         for r, row in enumerate(grid.rows):
@@ -406,33 +699,95 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
                     line.append("")
                     continue
                 text = cell["text"]
+                mine = cells_look.get(f"{r},{c}", {})
                 style = st_cell
-                if cell.get("align"):
-                    style = ParagraphStyle("cellx", parent=st_cell, alignment=ALIGN[cell["align"]])
+                ink = hex_rgb(mine.get("color"))
+                if cell.get("align") or ink:
+                    style = ParagraphStyle("cellx", parent=st_cell, **({"alignment": ALIGN[cell["align"]]} if cell.get("align") else {}),
+                                           **({"textColor": colors.Color(*ink)} if ink else {}))
                 xml = inline({"text": text, "spans": cell.get("spans", [])})
-                if r < grid.header_rows or cell.get("header"):
+                if (r < grid.header_rows if look is None else mine.get("bold")) or cell.get("header") and look is None:
                     xml = f"<b>{xml}</b>"
                 line.append(Paragraph(xml, style))
                 if cell.get("colspan", 1) == 1:
                     longest = max([len(w) for w in text.split()] + [1])
                     weights[c] = max(weights[c], min(max(len(text) ** 0.7, longest), 40))
             data.append(line)
-        total = sum(weights)
-        widths = [max(width * w / total, 14.0) for w in weights]
-        scale = width / sum(widths)
-        widths = [w * scale for w in widths]
-        table = Table(data, colWidths=widths, repeatRows=grid.header_rows, splitByRow=1)
-        cmds: list[tuple] = [("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#9aa0a6")),
-                             ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                             ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-                             ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]
-        if grid.header_rows:
-            cmds.append(("BACKGROUND", (0, 0), (-1, grid.header_rows - 1), colors.HexColor("#eceff3")))
+        # ---- column widths: the ones the person set; otherwise as the editor lays a table out (equal columns), or by content when "fit to content"
+        layout_widths = (look or {}).get("column_widths_mm")
+        fit = (look or {}).get("fit", "auto")
+        if isinstance(layout_widths, list) and len(layout_widths) == grid.columns:
+            widths = [float(w) * MM for w in layout_widths]
+            goal = width if fit == "window" else min(sum(widths), width)
+        elif look is not None and fit != "content":
+            goal = float(look["width_mm"]) * MM if look.get("width_mm") and fit != "window" else width
+            goal = min(goal, width)
+            widths = [goal / grid.columns] * grid.columns
+        else:
+            total = sum(weights)
+            widths = [max(width * w / total, 14.0) for w in weights]
+            goal = width
+        widths = [w * goal / sum(widths) for w in widths]
+        indent = float((look or {}).get("indent_mm") or 0) * MM
+        align = (look or {}).get("align")
+        cmds: list[tuple] = [("VALIGN", (0, 0), (-1, -1), "TOP")]
+        pad = pad_default if pad_default is not None else None
+        cmds += [("LEFTPADDING", (0, 0), (-1, -1), pad if pad is not None else 4), ("RIGHTPADDING", (0, 0), (-1, -1), pad if pad is not None else 4),
+                 ("TOPPADDING", (0, 0), (-1, -1), pad if pad is not None else 3), ("BOTTOMPADDING", (0, 0), (-1, -1), pad if pad is not None else 3)]
+        if look is None:                                        # no resolved look (a caller that is not Writer): the plain grid of before
+            cmds.insert(0, ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#9aa0a6")))
+            if grid.header_rows:
+                cmds.append(("BACKGROUND", (0, 0), (-1, grid.header_rows - 1), colors.HexColor("#eceff3")))
+        else:
+            for r, row in enumerate(grid.rows):
+                for c, cell in enumerate(row):
+                    if cell is None:
+                        continue
+                    mine = cells_look.get(f"{r},{c}", {})
+                    end = (c + cell.get("colspan", 1) - 1, r + cell.get("rowspan", 1) - 1)
+                    fill = hex_rgb(mine.get("fill"))
+                    if fill:
+                        cmds.append(("BACKGROUND", (c, r), end, colors.Color(*fill)))
+                    if mine.get("valign"):
+                        cmds.append(("VALIGN", (c, r), end, {"top": "TOP", "middle": "MIDDLE", "bottom": "BOTTOM"}[mine["valign"]]))
+                    if mine.get("padding_mm") is not None:
+                        p_ = float(mine["padding_mm"]) * MM
+                        cmds += [("LEFTPADDING", (c, r), end, p_), ("RIGHTPADDING", (c, r), end, p_), ("TOPPADDING", (c, r), end, p_), ("BOTTOMPADDING", (c, r), end, p_)]
+            for axis, line, first, last, spec in border_runs(look, len(grid.rows), grid.columns):
+                rgb = hex_rgb(spec.get("color")) or (0, 0, 0)
+                w = float(spec["width_pt"])
+                style = spec.get("style", "solid")
+                dash = None if style in ("solid", "double") else ((w * 4, w * 2.5) if style == "dashed" else (w, w * 2.2))
+                count, weight, space = (2, max(w / 3, 0.2), w / 3) if style == "double" and w >= 3 else (1, w, 0)
+                common = (weight, colors.Color(*rgb), 1 if style == "dotted" else 0, dash, 0, count, space)
+                if axis == "h":
+                    if line < len(grid.rows):
+                        cmds.append(("LINEABOVE", (first, line), (last, line), *common))
+                    else:
+                        cmds.append(("LINEBELOW", (first, line - 1), (last, line - 1), *common))
+                elif line < grid.columns:
+                    cmds.append(("LINEBEFORE", (line, first), (line, last), *common))
+                else:
+                    cmds.append(("LINEAFTER", (line - 1, first), (line - 1, last), *common))
         for r, row in enumerate(grid.rows):
             for c, cell in enumerate(row):
                 if cell is not None and (cell.get("colspan", 1) > 1 or cell.get("rowspan", 1) > 1):
                     cmds.append(("SPAN", (c, r), (c + cell.get("colspan", 1) - 1, r + cell.get("rowspan", 1) - 1)))
-        table.setStyle(TableStyle(cmds))
+        heights = (look or {}).get("row_heights_mm")
+        hAlign = {"center": "CENTER", "right": "RIGHT"}.get(align, "LEFT")
+        def build(row_heights: Any) -> Any:
+            built = Table(data, colWidths=widths, rowHeights=row_heights, repeatRows=grid.header_rows, splitByRow=1, hAlign=hAlign)
+            built.setStyle(TableStyle(cmds))
+            return built
+        table = build(None)
+        if isinstance(heights, list) and len(heights) == len(grid.rows):
+            table.wrap(goal, 1_000_000)                    # the height every row needs for its text, then the one the person asked for (at least, or exactly)
+            exact = look.get("row_height_rule") == "exact"
+            table = build([float(h_) * MM if exact else max(float(h_) * MM, natural) for h_, natural in zip(heights, table._rowHeights)])  # noqa: SLF001
+        if indent and align not in ("center", "right"):
+            table = [Indenter(left=indent), table, Indenter(left=-indent)]
+        elif look is not None and look.get("keep_rows_together"):
+            table = KeepTogether([table])
         return table
 
     from .vector_shapes import supported as is_vector_shape, make_flowable
@@ -440,7 +795,7 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
     def build_story() -> None:
         nonlocal current_section
         story.clear()
-        state.update(emitted=False, outline_level=0)
+        state.update(emitted=False, outline_level=0, region=None, region_start=0, base=first_id)
         current_section = first_id
         story.append(NextPageTemplate(first_id))
         for kind, item in group_blocks(doc["blocks"]):
@@ -488,44 +843,13 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
                 style, flags = style_for(block, st_body)
                 if block.get("style") is None and level == 1:
                     flags["bold"] = True
-                heading_id = toc.get("heading", "")
-                number = reference_labels.get(heading_id, "") if title_info.get("show_page_numbers", True) else ""
-                if not number:
+                number = reference_labels.get(toc.get("heading", ""), "")
+                look = resolve_look(toc_looks.get(toc["id"]), show_page_numbers=bool(title_info.get("show_page_numbers", True)),
+                                    leader_dots=bool(title_info.get("leader_dots", True)))
+                if not number or look["position"] == "hidden":
                     emit(TrackedParagraph(inline(block, flags), style, block["id"]))
                     continue
-                width = max(50.0, fw - style.leftIndent)
-                page_w = min(max(35.0, len(number) * base * 0.75 + 8), width * 0.15)
-                if title_info.get("leader_dots", True):
-                    try:
-                        estimated_label_w = pdfmetrics.stringWidth(clean(block["text"]), style.fontName, style.fontSize)
-                    except Exception:  # noqa: BLE001 - unsupported glyph; actual Paragraph still draws with fallback
-                        estimated_label_w = len(block["text"]) * style.fontSize * 0.5
-                    text_w = min(width * 0.76, max(width * 0.2, estimated_label_w + 12))
-                    dots_w = max(0.0, width - page_w - text_w)
-                else:
-                    dots_w = 0.0
-                    text_w = width - page_w
-                left = Paragraph(inline(block, flags), style)
-                right_style = ParagraphStyle("toc-number", parent=st_body, alignment=TA_RIGHT,
-                                             fontSize=style.fontSize, leading=style.leading, spaceAfter=0)
-                cells: list[Any] = [left]
-                widths = [text_w]
-                if dots_w:
-                    dot_width = pdfmetrics.stringWidth(".", body_font, max(7, style.fontSize * 0.8))
-                    dots = "." * min(120, max(2, int(dots_w / max(1, dot_width)) - 1))
-                    cells.append(Paragraph(dots, ParagraphStyle("toc-dots", parent=st_body, fontSize=max(7, style.fontSize * 0.8),
-                                                                 leading=style.leading, spaceAfter=0)))
-                    widths.append(dots_w)
-                cells.append(Paragraph(markup_text(number, False), right_style))
-                widths.append(page_w)
-                table = Table([cells], colWidths=widths, hAlign="LEFT")
-                table.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 0),
-                                           ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                                           ("TOPPADDING", (0, 0), (-1, -1), 0),
-                                           ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-                                           ("VALIGN", (0, 0), (-1, -1), "BOTTOM")]))
-                table._sldc_block_id = block["id"]
-                emit(table)
+                emit(TocEntry(inline(block, flags), flagged(markup_text(number, False), flags), number, style, look, column_for(toc["id"], look), block["id"]))
             elif t == "quote":
                 style, flags = style_for(block, st_quote)
                 emit(TrackedParagraph(inline(block, {"italic": True, **flags}), style, block["id"]))
@@ -570,6 +894,8 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
                         emit(Spacer(1, base * 0.5))
                 except Exception as exc:  # noqa: BLE001
                     warnings.append(f"Image {fig['asset']} could not be placed: {exc}")
+            elif rule_look(block) is not None:
+                emit(RuleLine(rule_look(block) or {}, block["id"]))
             else:
                 if not block["text"].strip():
                     if has_page_break(block):
@@ -577,6 +903,7 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
                     continue
                 style, flags = style_for(block, st_body)
                 emit(TrackedParagraph(inline(block, flags), style, block["id"]))
+        flush_region()
         if opts.include_notes and (notes.note_numbers or notes.cited):
             story.append(Spacer(1, base))
             emit(Paragraph("<b>Notes</b>", st_head[3]))
@@ -622,6 +949,7 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
                 self.__dict__.update(saved)
                 info = section_info.get(tid, section_info[first_id])
                 self._draw_edges(info, index + 1, total, printed_labels[index])
+                draw_band_shapes(self, info["section"], index + 1, index == 0 or template_ids[index - 1] != tid, info["setup"], info["page"][0], info["page"][1], "front")
                 super().showPage()
             super().save()
 
@@ -629,10 +957,14 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
             section = info["section"]
             s: PageSetup = info["setup"]
             pw, ph = info["page"]
+            left_margin, right_margin = s.left_for(physical), s.right_for(physical)
+            left_hand = physical % 2 == 0
             for edge in ("header", "footer"):
                 template = (section or {}).get(edge)
                 if template is None and edge == "footer" and opts.page_numbers and section is None:
                     template = {"center": "{page}"}
+                if left_hand and (s.odd_even or (s.mirror and s.mirror_edges)):
+                    template = even_page_template(edge, template, s)          # its own even-page text, or the ordinary one with the edges swapped in a book
                 if not template:
                     continue
                 def replace_fields(raw: str) -> str:
@@ -640,11 +972,12 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
                         .replace("{title}", title).replace("\x01", "{").replace("\x02", "}")
                 y = ph - (s.top * MM) / 2 - 3 if edge == "header" else (s.bottom * MM) / 2 - 3
                 for pos in ("left", "center", "right"):
-                    raw = template.get(pos, "")
+                    from_pos = pos                          # a left-hand page's template already has its edges in place (even_page_template)
+                    raw = template.get(from_pos, "")
                     if not raw:
                         continue
-                    fallback = (template.get("formats") or {}).get(pos, {})
-                    rich = (template.get("runs") or {}).get(pos) or []
+                    fallback = (template.get("formats") or {}).get(from_pos, {})
+                    rich = (template.get("runs") or {}).get(from_pos) or []
                     fragments = rich if rich and "".join(r["text"] for r in rich) == raw else [{"text": raw}]
                     drawn: list[tuple[str, str, float, str, float]] = []
                     for fragment in fragments:
@@ -659,7 +992,7 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
                         width = pdfmetrics.stringWidth(printable, face, size)
                         drawn.append((printable, face, size, props.get("color", "#555555"), width))
                     total_width = sum(fragment[4] for fragment in drawn)
-                    x = s.left * MM if pos == "left" else pw / 2 - total_width / 2 if pos == "center" else pw - s.right * MM - total_width
+                    x = left_margin * MM if pos == "left" else pw / 2 - total_width / 2 if pos == "center" else pw - right_margin * MM - total_width
                     for printable, face, size, color, width in drawn:
                         self.setFont(face, size)
                         self.setFillColor(colors.HexColor(color))
@@ -683,6 +1016,11 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
                 block_id = getattr(flowable, "_sldc_block_id", None)
                 if block_id:
                     measured_pages.setdefault(block_id, self.page)
+                if isinstance(flowable, KeepInFrame):      # one column of a balanced region: the blocks in it are on this page
+                    for inner in getattr(flowable, "_content", []) or []:
+                        inner_id = getattr(inner, "_sldc_block_id", None)
+                        if inner_id:
+                            measured_pages.setdefault(inner_id, self.page)
 
         try:
             document = LayoutDocTemplate(buffer, lang=lang if lang and lang != "und" else None, **kwargs)
@@ -698,7 +1036,16 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
     for attempt in range(5):
         measured_pages.clear()
         try:
-            pages = run_build()
+            try:
+                pages = run_build()
+            except ValueError as exc:
+                if "BalancedColumns" not in str(exc) or state["regions_off"]:
+                    raise
+                # a block that cannot be balanced across columns (ReportLab cannot split it): the columns start on a page of their own instead
+                state["regions_off"] = True
+                warnings.append("Columns that share a page with other text could not be balanced for this content, so each starts a new page in the PDF")
+                measured_pages.clear()
+                pages = run_build()
         except LayoutError as exc:
             if state["degraded"]:
                 raise
@@ -718,12 +1065,13 @@ def write_pdf(package: Any, dest: Path, opts: WriteOptions) -> WriteResult:
     if missing:
         sample = "".join(sorted(missing))[:20]
         warnings.append(f"{len(missing)} character(s) are not in any available font and may appear as boxes: {sample}")
-    lost = ["accessibility tags and image alt text", "native footnotes (written as endnotes)", "comments and revision history",
+    lost = ["dashed, dotted or double styles of the line between columns (drawn solid)", "unequal widths and column breaks inside a selection that shares a page with other text",
+            "accessibility tags and image alt text", "native footnotes (written as endnotes)", "comments and revision history",
             "editability of the text layout"]
     return WriteResult(dest, "pdf", "reportlab" + (f" + {plan.body.label}" if plan.body else ""), warnings=warnings,
                        kept=["text with embedded fonts", "headings and a PDF outline", "lists", "tables with merged cells and "
                              "repeating header rows", "bold/italic/underline/strike/super/subscript/colour", "hyperlinks and "
-                             "internal links", "images", "editable vector path appearance with searchable shape text", "page size, margins, columns per section",
+                             "internal links", "images", "editable vector path appearance with searchable shape text", "page size, margins, columns (whole-page columns may be unequal; a selection in the middle of a page is balanced across equal columns)", "the line between columns", "column breaks", "table of contents leaders (dots, dashes, rule) and page-number placement",
                              "headers/footers with page numbers", "page breaks", "document properties"],
                        lost=lost, pages=pages,
                        layout={"pages": pages, "blockPages": measured_pages.copy(), "printedLabels": printed_labels.copy(),
