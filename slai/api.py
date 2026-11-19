@@ -57,8 +57,14 @@ def job_cancel(app: App, req: Request) -> Any:
 # ---------------------------------------------------------------------------------------------- app
 @route("GET", "/api/health")
 def health(app: App, req: Request) -> Any:
-    return {"name": "SLAI Documaster", "version": __version__, "uptimeS": round(time.time() - app.started),
-            "documents": len(app.ws.documents)}
+    from . import engine, startup
+    out = {"name": "SLAI Documaster", "version": __version__, "uptimeS": round(time.time() - app.started),
+           "documents": len(app.ws.documents), "bundled": startup.BUNDLED}
+    if startup.BUNDLED:                                    # the installed desktop app: what it was built from
+        bundle = engine.find_bundle(startup.HERE)
+        if bundle is not None:
+            out["bundle"] = engine.bundle_summary(bundle)
+    return out
 
 
 @route("GET", "/api/capabilities")

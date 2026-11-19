@@ -10,6 +10,7 @@ import hmac
 import json
 import mimetypes
 import os
+import socket
 import sys
 import traceback
 from http import HTTPStatus
@@ -33,7 +34,15 @@ MAX_HEADER_QUERY = 8192
 
 class DocumasterServer(ThreadingHTTPServer):
     daemon_threads = True
-    allow_reuse_address = True
+    # SO_REUSEADDR means "restart quickly" on POSIX but "share the port with whoever is listening" on Windows, where another program
+    # could then bind our port and receive requests (and the token). Windows gets the exclusive option instead.
+    allow_reuse_address = os.name != "nt"
+
+    def server_bind(self) -> None:
+        exclusive = getattr(socket, "SO_EXCLUSIVEADDRUSE", None)
+        if os.name == "nt" and exclusive is not None:
+            self.socket.setsockopt(socket.SOL_SOCKET, exclusive, 1)
+        super().server_bind()
 
     def __init__(self, app: App, client_dir: Path | None) -> None:
         self.app = app

@@ -16,6 +16,8 @@ from types import ModuleType
 from ..errors import DependencyMissing
 
 _ROOT: Path | None = None
+#: Folders searched *before* PATH for helper programs. The bundled desktop app registers its ``helpers/`` folders here (see ``engine.py``).
+HELPER_DIRS: list[str] = []
 
 
 def looks_like_slai_root(path: Path) -> bool:
@@ -74,6 +76,10 @@ def have_module(name: str) -> bool:
 
 def find_binary(*names: str, extra_dirs: tuple[str, ...] = ()) -> str | None:
     for name in names:
+        for directory in HELPER_DIRS:
+            found = shutil.which(name, path=directory)
+            if found:
+                return found
         found = shutil.which(name)
         if found:
             return found

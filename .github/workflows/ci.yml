@@ -38,3 +38,13 @@ jobs:
       - run: python -m compileall -q slai
       # Tests that need the SLAI checkout (set SLAI_ROOT) report themselves as skipped here; they are not counted as passed.
       - run: python -m unittest discover -s tests_py -v
+  desktop-shell:
+    # The first place the Tauri shell is actually compiled: it could not be built where it was written (no crates.io access). If this
+    # job fails on its first run, that is the shell's first real build telling you what to fix. No Cargo.lock is committed yet:
+    # commit the one this job generates.
+    name: Desktop shell (Rust, Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --manifest-path src-tauri/Cargo.toml

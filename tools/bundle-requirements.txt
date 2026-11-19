@@ -1,0 +1,47 @@
+# Everything the installed app's Python carries. `tools/build_bundle.py` installs exactly this (plus what these need) into the bundle's
+# site-packages with `pip install --target ... --only-binary=:all:` for Windows x64 / CPython 3.13, and writes the result to bundle.json.
+#
+# Two kinds of pin, and why:
+#
+#  * Documaster's own libraries are pinned to the versions its test suite was run against (Python 3.13), because those are the only
+#    versions whose behaviour has been checked here: pypdf 5.9.0, pypdfium2 5.13.0, reportlab 5.0.1, python-docx 1.2.0, Pillow 12.3.0,
+#    cryptography 50.0.1, PyYAML 6.0.3, numpy 2.5.3.
+#    (regex is not installed in the test environment, so it takes the SLAI venv's version below; Documaster only needs it for an optional feature.)
+#
+#  * Everything SLAI's agents need is pinned to the versions in the SLAI virtual environment on the machine this was prepared for
+#    (G:\GAIA\AI\SLAI\venv, Python 3.13.14): torch 2.15.0 (CPU build), torchvision 0.29.2, scipy 1.18.1, scikit-learn 1.9.1, librosa 1.0.1 ...
+#    SLAI's code is known to run there; it was not run here.
+#
+# Why SLAI needs this much: importing any of SLAI's agents pulls in torch, torchvision, librosa, einops, rotary-embedding-torch,
+# matplotlib and psutil unconditionally (see docs/DESKTOP_APP.md, "Why torch"). `python tools/stage_slai.py --why torch` shows the chain.
+#
+# NOT included on purpose (SLAI's spatial-format and web code, which Documaster never calls): OCP, ezdxf, ifcopenshell, manifold3d,
+# shapely, trimesh, huggingface_hub (the model hub is forced offline), transformers, sentence-transformers, selenium, flask, fastapi,
+# PyQt5, opencv, pandas, statsmodels.
+
+# --- Documaster (tested versions) ---
+pypdf==5.9.0
+pypdfium2==5.13.0
+reportlab==5.0.1
+python-docx==1.2.0
+Pillow==12.3.0
+cryptography==50.0.1
+PyYAML==6.0.3
+numpy==2.5.3
+
+# --- SLAI agents (versions from the SLAI venv) ---
+torch==2.15.0
+torchvision==0.29.2
+scipy==1.18.1
+scikit-learn==1.9.1
+joblib==1.6.0
+librosa==1.0.1
+einops==0.8.2
+rotary-embedding-torch==0.9.2
+matplotlib==3.11.2
+psutil==7.2.2
+regex==2026.11.9
+jsonschema==4.26.0
+requests==2.34.2
+Pympler==1.1
+colorama==0.4.6

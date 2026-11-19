@@ -223,3 +223,7 @@ __marimo__/
 node_modules/
 *.tsbuildinfo
 tests_e2e/shots/
+
+# Desktop app build output (tools/build_bundle.py; src-tauri/.gitignore covers target/ and engine/)
+.bundle-cache/
+src-tauri/engine/

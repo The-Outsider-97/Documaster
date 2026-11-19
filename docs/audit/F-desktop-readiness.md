@@ -1,4 +1,8 @@
-# F. Desktop readiness (assessment only — no packaging was started)
+# F. Desktop readiness
+
+> **Update (2026-11-19): packaging was then authorised and started.** The assessment below is the original audit finding and is kept as written. What changed: blocker 1 (SLAI as a runtime dependency) is resolved by bundling a pruned, byte-identical copy of SLAI and the LANTRA model inside the installer; the free-port start-up gap is closed (`--port-fallback`, `--ready-line`, `--exit-on-stdin-close`); a Tauri 2 shell, a bundle builder, a smoke test and a Windows build script were added. Blocker 2 (Windows unverified) and the signing/installer/update items **remain open**: nothing has been compiled, built or run on Windows. See [docs/DESKTOP_APP.md](../DESKTOP_APP.md), especially "What was not built or run".
+
+# Original assessment (before packaging was started)
 
 ## Verdict
 **Not ready to package as a standalone desktop app yet.** The local web app itself is sound for a desktop shell, but one architectural dependency and one verification gap block packaging.

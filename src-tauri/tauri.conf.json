@@ -1,0 +1,49 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "SLAI Documaster",
+  "version": "2.4.0",
+  "identifier": "app.slai.documaster",
+  "build": {
+    "frontendDist": "./splash"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "title": "SLAI Documaster",
+        "width": 1360,
+        "height": 880,
+        "minWidth": 900,
+        "minHeight": 600,
+        "resizable": true,
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; img-src 'self' data:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Productivity",
+    "shortDescription": "Documents on your own computer, with SLAI's agents built in",
+    "longDescription": "SLAI Documaster: count, convert, merge, organise, edit, read and analyse documents. Everything, including SLAI's language, privacy, safety and quality agents and the model they use, runs on your computer; nothing is uploaded.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      },
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      }
+    }
+  }
+}

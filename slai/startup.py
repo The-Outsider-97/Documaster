@@ -24,10 +24,13 @@ from pathlib import Path
 from typing import Callable, Literal, Sequence
 
 from .bridge import find_binary
+from .engine import Bundle
 from .errors import DocumasterError
 
 HERE = Path(__file__).resolve().parent.parent          # the Documaster folder (the one with package.json)
 Status = Literal["ok", "warn", "error"]
+#: True while running from the installed desktop app (set by ``__main__``); only changes the wording of fixes, which then say "reinstall".
+BUNDLED = False
 MIN_PYTHON = (3, 10)
 BUILD_RECORD = "build.json"
 Requirement = tuple[str, str, str, str]                  # (distribution, import name, minimum version, what it is needed for)
@@ -129,11 +132,14 @@ def check_dependency(distribution: str, module: str, minimum: str, why: str, *, 
     install = f"{Path(sys.executable).name} -m pip install -r {HERE / 'requirements.txt'}"
     bad: Status = "error" if required else "warn"
     if version is None or not can_import(module):
+        if BUNDLED:
+            return Finding(distribution, bad, f"missing from this installation; needed for {why}",
+                           "Reinstall SLAI Documaster: the installed copy is incomplete.")
         return Finding(distribution, bad, f"not installed; needed for {why}",
                        install if required else f"{install}   (without it Documaster still starts)")
     if _version_tuple(version) < _version_tuple(minimum):
         return Finding(distribution, bad, f"{version} is older than the {minimum} Documaster was tested from; needed for {why}",
-                       f"{Path(sys.executable).name} -m pip install --upgrade \"{distribution}>={minimum}\"")
+                       "Reinstall SLAI Documaster." if BUNDLED else f"{Path(sys.executable).name} -m pip install --upgrade \"{distribution}>={minimum}\"")
     return Finding(distribution, "ok", version)
 
 
@@ -150,6 +156,54 @@ def check_slai(root: Path | None) -> Finding:
         return Finding("SLAI checkout", "error", "not found, so SLDC, the Reader engines and the SLAI agents are unavailable",
                        "Set SLAI_ROOT to the SLAI folder, or pass --slai-root.")
     return Finding("SLAI checkout", "ok", str(root))
+
+
+def _sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def check_bundle(bundle: Bundle, *, deep: bool = False) -> Finding:
+    """The installed copy is complete: every file listed in SLAI's ``slai_bundle.json`` exists with the recorded size (names and sizes
+    only - hashing the 330 MB model on every start would cost seconds; ``python -m slai --check --deep`` hashes everything)."""
+    path = bundle.slai_root / "slai_bundle.json"
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        entries = manifest["entries"]
+    except (OSError, ValueError, KeyError) as exc:
+        return Finding("Installation", "error", f"{path} cannot be read ({type(exc).__name__})", "Reinstall SLAI Documaster.")
+    bad: list[str] = []
+    for item in entries:
+        target = bundle.slai_root / item["path"]
+        try:
+            if target.stat().st_size != item["bytes"]:
+                bad.append(f"{item['path']} (size differs)")
+            elif deep and item.get("sha256") and _sha256(target) != item["sha256"]:
+                bad.append(f"{item['path']} (content differs)")
+        except OSError:
+            bad.append(f"{item['path']} (missing)")
+    if bad:
+        shown = "; ".join(bad[:3]) + (f"; and {len(bad) - 3} more" if len(bad) > 3 else "")
+        return Finding("Installation", "error", f"{len(bad)} of {len(entries)} SLAI file(s) are missing or changed: {shown}",
+                       "Reinstall SLAI Documaster.")
+    models = [m["path"].rsplit("/", 1)[-1] for m in manifest.get("models", [])]
+    return Finding("Installation", "ok", f"{len(entries)} SLAI files" + (f", model {', '.join(models)}" if models else ", no model"))
+
+
+def check_slai_writable(root: Path) -> Finding:
+    """SLAI's agents write logs and caches relative to the SLAI root. If the install folder is read-only they degrade; say so."""
+    probe = root / "logs" / ".documaster-write-check"
+    try:
+        probe.parent.mkdir(parents=True, exist_ok=True)
+        probe.write_bytes(b"ok")
+        probe.unlink()
+    except OSError as exc:
+        return Finding("SLAI folder writable", "warn", f"{root} is read-only ({exc.strerror or exc}); SLAI agents cannot write their logs there",
+                       "Install for the current user only (the default), not into Program Files.")
+    return Finding("SLAI folder writable", "ok", str(root))
 
 
 def check_data_dir(path: Path) -> Finding:
@@ -244,8 +298,11 @@ def check_client(app_dir: Path, client_dir: Path) -> Finding:
     return Finding("Web client", "ok", str(client_dir))
 
 
-def check_environment(root: Path | None, client_dir: Path, *, app_dir: Path = HERE, data_dir: Path | None = None) -> list[Finding]:
+def check_environment(root: Path | None, client_dir: Path, *, app_dir: Path = HERE, data_dir: Path | None = None,
+                      bundle: Bundle | None = None) -> list[Finding]:
     found = [check_python(root), check_slai(root)]
+    if bundle is not None:
+        found += [check_bundle(bundle), check_slai_writable(bundle.slai_root)]
     found += [check_dependency(*r, required=True) for r in REQUIRED] + [check_dependency(*r, required=False) for r in OPTIONAL]
     found += [check_program(*p) for p in PROGRAMS]
     if data_dir is not None:
