@@ -1,0 +1,110 @@
+{
+ "machine": {
+  "platform": "Linux-6.18.44-fc-v653-x86_64-with-glibc2.39",
+  "python": "3.13.16",
+  "cpus": 2
+ },
+ "date": "2026-11-19",
+ "repeat": 3,
+ "results": [
+  {
+   "case": "upload 10-page PDF",
+   "runs": 3,
+   "min_s": 0.003,
+   "median_s": 0.003,
+   "max_s": 0.056,
+   "peak_rss_mb": 70,
+   "note": ""
+  },
+  {
+   "case": "upload 300-page PDF (0.2 MB)",
+   "runs": 3,
+   "min_s": 0.025,
+   "median_s": 0.031,
+   "max_s": 0.035,
+   "peak_rss_mb": 75,
+   "note": ""
+  },
+  {
+   "case": "count words, 2M-word text (/api/count/text)",
+   "runs": 3,
+   "min_s": 4.349,
+   "median_s": 4.454,
+   "max_s": 4.586,
+   "peak_rss_mb": 240,
+   "note": "deterministic tokeniser, whole text in one request"
+  },
+  {
+   "case": "count words, 300-page PDF",
+   "runs": 3,
+   "min_s": 1.033,
+   "median_s": 1.071,
+   "max_s": 2.021,
+   "peak_rss_mb": 240,
+   "note": ""
+  },
+  {
+   "case": "count words, 2000-paragraph DOCX",
+   "runs": 3,
+   "min_s": 0.312,
+   "median_s": 0.326,
+   "max_s": 6.455,
+   "peak_rss_mb": 240,
+   "note": ""
+  },
+  {
+   "case": "convert 2000-paragraph DOCX -> PDF (model engine)",
+   "runs": 3,
+   "min_s": 2.165,
+   "median_s": 2.202,
+   "max_s": 2.439,
+   "peak_rss_mb": 240,
+   "note": ""
+  },
+  {
+   "case": "convert 2000-paragraph DOCX -> PDF (LibreOffice engine)",
+   "runs": 3,
+   "min_s": 8.35,
+   "median_s": 8.358,
+   "max_s": 8.51,
+   "peak_rss_mb": 240,
+   "note": ""
+  },
+  {
+   "case": "convert 300-page PDF -> TXT",
+   "runs": 3,
+   "min_s": 0.18,
+   "median_s": 0.184,
+   "max_s": 0.195,
+   "peak_rss_mb": 240,
+   "note": ""
+  },
+  {
+   "case": "merge 20 PDFs x 50 pages -> PDF (1000 pages)",
+   "runs": 3,
+   "min_s": 1.141,
+   "median_s": 1.171,
+   "max_s": 1.236,
+   "peak_rss_mb": 240,
+   "note": ""
+  },
+  {
+   "case": "page image (w=1200) of a 300-page PDF, page 150",
+   "runs": 3,
+   "min_s": 0.078,
+   "median_s": 0.084,
+   "max_s": 0.092,
+   "peak_rss_mb": 240,
+   "note": ""
+  },
+  {
+   "case": "rotate 1 page of a 10-page PDF (op + new revision)",
+   "runs": 3,
+   "min_s": 0.005,
+   "median_s": 0.006,
+   "max_s": 0.011,
+   "peak_rss_mb": 240,
+   "note": ""
+  }
+ ]
+}
