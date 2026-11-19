@@ -56,6 +56,37 @@ class CountingTests(unittest.TestCase):
             counter.count_text("x" * 50_000_001)
 
 
+class CountingFixtureTests(unittest.TestCase):
+    """Fixed inputs with the counts the documented rules give. A change that moves one of these is a change of the rules."""
+
+    CASES = [
+        ("Hello, world!", 2), ("don't stop-me now", 3), ("3.14 and 1,250,000", 3), ("O'Brien's", 1), ("naïve café", 2),
+        ("你好世界", 4), ("こんにちは", 5), ("안녕하세요 세계", 2), ("snake_case_name", 3), ("word\u2014word", 2), ("a\u00a0b", 2),
+        ("soft\u00adhyphen", 1), ("exam\u00adple of hy\u00adphen\u00adation", 3), ("", 0), ("   \n\t ", 0), ("-- ... !!", 0), ("1st 2nd", 2),
+    ]
+
+    def test_word_counts(self):
+        for text, expected in self.CASES:
+            with self.subTest(text=text):
+                self.assertEqual(len(textstats.tokenize(text)), expected, textstats.tokenize(text))
+                self.assertEqual(textstats.basic_counts(text)["words"], expected)
+
+    def test_sentence_counts(self):
+        for text, expected in (("Dr. Smith went home. He slept.", 2), ("It is 5 p.m. Then we left.", 2), ("Wait... what? Yes!", 3),
+                               ("See Fig. 3 for details. Next.", 2), ("No end punctuation", 1), ("", 0), ("你好。世界！", 2)):
+            with self.subTest(text=text):
+                self.assertEqual(textstats.count_sentences(text), expected)
+
+    def test_paragraphs_ignore_blank_runs_and_line_endings(self):
+        self.assertEqual(textstats.count_paragraphs("a\r\n\r\nb\n  \n\n\nc"), 3)
+        self.assertEqual(textstats.count_paragraphs(" \n\n "), 0)
+
+    def test_counting_is_deterministic(self):
+        text = "Some sample text. It repeats, repeats, and repeats! " * 50
+        runs = {repr(sorted(textstats.basic_counts(text).items(), key=lambda kv: kv[0])) for _ in range(5)}
+        self.assertEqual(len(runs), 1)
+
+
 class PiiTests(unittest.TestCase):
     def kinds(self, text):
         return [(i["type"], i["text"]) for i in pii.scan_text(text)]

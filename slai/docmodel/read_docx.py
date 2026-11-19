@@ -62,15 +62,32 @@ def _run_properties(run: Any, paragraph: Any = None) -> dict[str, Any]:
     return out
 
 
+# w:jc values python-docx has no enum member for. Word's strict mode and LibreOffice write "start" / "end"; they mean left / right in
+# left-to-right text (the direction-aware meaning is not modelled, which the SLDC paragraph alignment cannot express either).
+_JC_VALUES = {"left": 0, "start": 0, "center": 1, "right": 2, "end": 2, "both": 3, "justify": 3}
+
+
+def _alignment(fmt: Any) -> int | None:
+    """``fmt.alignment`` as 0 left / 1 center / 2 right / 3 justify, or None. python-docx raises ValueError for jc values it does not know,
+    which used to make every RTF and DOC file (converted through LibreOffice) unreadable."""
+    try:
+        value = fmt.alignment
+    except ValueError:
+        jc = getattr(getattr(getattr(fmt, "_element", None), "pPr", None), "jc", None)
+        raw = jc.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val") if jc is not None else None
+        return _JC_VALUES.get(raw)
+    return None if value is None else int(value)
+
+
 def _paragraph_properties(paragraph: Any) -> dict[str, Any]:
     pf = paragraph.paragraph_format
     style_pf = paragraph.style.paragraph_format if paragraph.style is not None else None
     attrs: dict[str, Any] = {}
-    align = paragraph.alignment
+    align = _alignment(pf)
     if align is None and style_pf is not None:
-        align = style_pf.alignment
+        align = _alignment(style_pf)
     if align is not None:
-        mapped = {0: "left", 1: "center", 2: "right", 3: "justify"}.get(int(align))
+        mapped = {0: "left", 1: "center", 2: "right", 3: "justify"}.get(align)
         if mapped:
             attrs["align"] = mapped
     for key, attr in (("space_before_pt", "space_before"), ("space_after_pt", "space_after")):
@@ -134,8 +151,8 @@ def _header_template(part: Any) -> dict[str, Any]:
             fields = dict(zip(("left", "center", "right"),
                               (segments[0], "\t".join(segments[1:-1]), segments[-1])))
         else:
-            align = paragraph.alignment
-            pos = {1: "center", 2: "right"}.get(int(align) if align is not None else 0, "left")
+            align = _alignment(paragraph.paragraph_format)
+            pos = {1: "center", 2: "right"}.get(align if align is not None else 0, "left")
             fields = {pos: text}
         for pos, value in fields.items():
             if value.strip():
@@ -486,8 +503,8 @@ def _table_rows(table: Table) -> list[list[dict[str, Any]]]:
                         cell_spans.append({"type": "format", "start": start + local,
                                            "end": start + local + len(segment), **props})
                     cursor = local + len(segment)
-                if align is None and paragraph.alignment is not None:
-                    align = {0: "left", 1: "center", 2: "right", 3: "justify"}.get(int(paragraph.alignment))
+                if align is None and _alignment(paragraph.paragraph_format) is not None:
+                    align = {0: "left", 1: "center", 2: "right", 3: "justify"}.get(_alignment(paragraph.paragraph_format))
             original = "".join(pieces)
             text = original.strip()
             lead = len(original) - len(original.lstrip())

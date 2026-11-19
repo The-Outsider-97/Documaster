@@ -9,10 +9,10 @@ from __future__ import annotations
 from typing import Any
 
 from . import __version__
-from .formats import FORMATS, TARGETS, label_for
+from .formats import FORMATS, LAYOUT_ONLY, TARGETS, label_for
 from .services import Services
 
-SOURCES = ("pdf", "sldc", "docx", "doc", "odt", "rtf", "html", "md", "txt", "xml", "csv", "png", "jpeg")
+SOURCES = ("pdf", "sldc", "docx", "doc", "odt", "rtf", "html", "md", "txt", "xml", "csv", "png", "jpeg", *LAYOUT_ONLY)
 
 
 def _read_route(fmt: str, svc: Services) -> dict[str, Any]:
@@ -46,6 +46,11 @@ def _read_route(fmt: str, svc: Services) -> dict[str, Any]:
     elif fmt in ('png', 'jpeg'):
         r.update(backend='Pillow image decoder', needs=['Pillow'], available=has('PIL'),
                  limits=['Image pages have no editable document text'])
+    elif fmt in LAYOUT_ONLY:
+        r.update(backend="LibreOffice (headless) renders it; Documaster has no reader for its content", needs=["LibreOffice"],
+                 available=False, layoutOnly=True,
+                 limits=["Only conversion to " + ", ".join(label_for(t) for t in LAYOUT_ONLY[fmt]) + " (LibreOffice engine); no word count, analysis or merge from the content"
+                         + ("" if t.soffice else " - LibreOffice not found on this machine")])
     return r
 
 
@@ -98,9 +103,13 @@ def matrix(svc: Services) -> dict[str, Any]:
                             (s != 'pdf' or t.has('pypdfium2')) and (d != 'pdf' or t.has('reportlab')))
             else:
                 model_ok = reads[s]["available"] and writes[d]["available"]
-            lo_pair = s in ("docx", "doc", "odt", "rtf", "html", "txt", "md") and d in ("pdf", "docx", "odt", "rtf", "html", "txt")
+            lo_pair = ((s in ("docx", "doc", "odt", "rtf", "html", "txt", "md") and d in ("pdf", "docx", "odt", "rtf", "html", "txt"))
+                       or (s in LAYOUT_ONLY and d in LAYOUT_ONLY[s]))
+            if s in LAYOUT_ONLY and d not in LAYOUT_ONLY[s]:
+                continue                                  # no route at all: do not list a pair that can only fail
             conversions.append({"from": s, "to": d, "model": {"available": model_ok, "layoutPreserved": False},
-                                "libreoffice": {"available": bool(t.soffice), "layoutPreserved": True} if lo_pair else None})
+                                "libreoffice": {"available": bool(t.soffice), "layoutPreserved": True} if lo_pair else None,
+                                "engineOnly": "libreoffice" if s in LAYOUT_ONLY else None})
     workspaces = [
         {"id": "counter", "label": "Word Counter", "available": True,
          "does": ["words, characters, sentences, paragraphs, reading and speaking time", "language detection", "per page / per part breakdown",

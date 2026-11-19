@@ -18,7 +18,9 @@ from typing import Callable, Iterator
 
 from .errors import OutputFailed, ValidationFailed
 
-_RESERVED = {"CON", "PRN", "AUX", "NUL", *{f"COM{i}" for i in range(1, 10)}, *{f"LPT{i}" for i in range(1, 10)}}
+_RESERVED = {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$",
+             *{f"COM{i}" for i in range(1, 10)}, *{f"LPT{i}" for i in range(1, 10)},
+             *{f"{d}{n}" for d in ("COM", "LPT") for n in "\u00b9\u00b2\u00b3"}}
 _BAD = re.compile(r'[<>:"/\\|?*\x00-\x1f\x7f]')
 
 
@@ -32,10 +34,11 @@ def safe_filename(name: str, fallback: str = "document", max_len: int = 120) -> 
     stem, dot, ext = text.rpartition(".")
     if not dot:
         stem, ext = text, ""
-    if stem.upper() in _RESERVED:
-        stem = f"_{stem}"
     ext = ext[:16]
     stem = stem[: max(1, max_len - len(ext) - 1)].rstrip(" .") or fallback
+    # Windows treats a name as a device when the part before the FIRST dot is reserved ("con.txt.pdf", "COM1.tar.gz", "AUX .txt").
+    if stem.split(".")[0].rstrip(" ").upper() in _RESERVED:
+        stem = f"_{stem}"
     return f"{stem}.{ext}" if ext else stem
 
 

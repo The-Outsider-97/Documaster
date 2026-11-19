@@ -9,6 +9,7 @@ from pathlib import Path
 from slai.docmodel.read_vector_shapes import parse_shape, shapes_in_paragraph, SHAPE_KEY
 from slai.docmodel.writers.vector_shapes import add_docx_shape, _WORD_PRESETS
 from slai.docmodel.writers.common import PageSetup
+from support import needs_slai
 
 
 def shape(kind="star"):
@@ -43,6 +44,11 @@ class DrawingMLRoundTrip(unittest.TestCase):
                 self.assertEqual(found[0]["kind"],kind)
                 self.assertAlmostEqual(found[0]["width_mm"],60,places=2)
                 self.assertAlmostEqual(found[0]["rotation_deg"],18.5,places=1)
+                if kind=="line":
+                    # Policy: a straight line has no text body (writers drop it in PDF and DOCX),
+                    # so the reimported line must carry no text rather than invented text.
+                    self.assertEqual(found[0]["text"]["content"],"")
+                    continue
                 self.assertEqual(found[0]["text"]["content"],"hello shape")
                 self.assertEqual(found[0]["text"]["spans"][0]["bold"],True)
 
@@ -66,6 +72,7 @@ class DrawingMLRoundTrip(unittest.TestCase):
         self.assertAlmostEqual(layout["y_mm"],30,places=2)
         self.assertEqual(found[0]["z_index"],3)
 
+    @needs_slai          # the reader builds SLDC blocks through the SLAI checkout
     def test_document_reader_returns_editable_shape_carriers(self):
         try:
             from docx import Document

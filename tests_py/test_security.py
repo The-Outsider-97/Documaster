@@ -115,9 +115,70 @@ class SecurityTests(unittest.TestCase):
             status, _, _ = self.h.raw("GET", f"/api/outputs/{oid}/download")
             self.assertIn(status, (400, 404))
 
+    def test_docx_with_an_oversized_xml_part_is_refused_before_it_is_parsed(self):
+        import io
+        import zipfile
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+            z.writestr("[Content_Types].xml", "<Types/>")
+            with z.open("word/document.xml", "w") as part:        # 300 MB of zeros: about 300 KB on the wire
+                chunk = b"\0" * (1 << 20)
+                for _ in range(300):
+                    part.write(chunk)
+        status, _, body = self.h.raw("POST", "/api/documents?name=bomb.docx", buf.getvalue(), {"Content-Type": "application/octet-stream"})
+        self.assertGreaterEqual(status, 400)
+        self.assertFalse(json.loads(body)["ok"])
+
     def test_non_loopback_host_is_refused_at_startup(self):
         from slai.__main__ import main
         self.assertEqual(main(["--host", "0.0.0.0", "--no-browser"]), 2)
+
+
+class ArchiveSniffTests(unittest.TestCase):
+    def test_sniffing_never_inflates_a_member(self):
+        """A 0.4 MB archive whose ``mimetype`` member inflates to 400 MB must be sniffed without holding it in memory."""
+        import tempfile
+        import tracemalloc
+        import zipfile
+        from pathlib import Path
+        from slai.formats import _sniff_zip
+        with tempfile.TemporaryDirectory() as t:
+            path = Path(t) / "bomb.docx"
+            with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+                z.writestr("manifest.json", "{}")
+                with z.open("mimetype", "w") as member:
+                    chunk = b"\0" * (1 << 20)
+                    for _ in range(400):
+                        member.write(chunk)
+            tracemalloc.start()
+            try:
+                self.assertIsNone(_sniff_zip(path))
+                peak = tracemalloc.get_traced_memory()[1]
+            finally:
+                tracemalloc.stop()
+        self.assertLess(peak, 16 * 1024 * 1024, f"sniffing used {peak} bytes")
+
+
+class FileNameTests(unittest.TestCase):
+    """Names that arrive from users and documents become file names on Windows too."""
+
+    def test_windows_device_names_are_defused_wherever_the_device_part_sits(self):
+        from slai.files import safe_filename
+        for name in ("CON.pdf", "con.txt.pdf", "COM1.tar.gz", "AUX .txt", "nul", "COM\u00b9.txt", "lpt3.docx"):
+            with self.subTest(name=name):
+                self.assertTrue(safe_filename(name).startswith("_"), safe_filename(name))
+        for name in ("console.pdf", "a.con.pdf", "report.pdf", "comic.pdf", "aux-notes.txt"):
+            with self.subTest(name=name):
+                self.assertEqual(safe_filename(name), name)
+
+    def test_directory_parts_and_forbidden_characters_never_survive(self):
+        from slai.files import safe_filename
+        for name in ("../../x.pdf", "..\\..\\x.pdf", "/etc/passwd", "C:\\Windows\\x.pdf", "a:b?.pdf", "..", ". .", ""):
+            with self.subTest(name=name):
+                out = safe_filename(name)
+                self.assertFalse(set(out) & set('<>:"/\\|?*'), out)
+                self.assertNotIn("..", out.replace("...", ""))
+                self.assertTrue(out.strip(" ."))
 
 
 if __name__ == "__main__":
