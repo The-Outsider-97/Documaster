@@ -9,7 +9,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "test:py": "python3 -m unittest discover -s tests_py -v",
-    "start": "npm run build && python3 -m slai"
+    "start": "npm run build && python3 -m slai",
+    "app:bundle": "python tools/build_bundle.py",
+    "app:smoke": "python tools/smoke_engine.py --bundle src-tauri/engine --agents-test",
+    "app:dev": "npx --yes @tauri-apps/cli@2 dev",
+    "app:build:windows": "build-windows.cmd"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

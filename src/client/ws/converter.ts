@@ -1,10 +1,10 @@
 // Mixed-format batch converter. Each file is an independent, cancellable, verified server job.
-import { dropzone, docRow, DOCUMENT_ACCEPT, IMAGE_ACCEPT, downloadLink, emptyState, ingest, listBlock, sectionTitle, verificationView } from '../components.js';
+import { dropzone, docRow, DOCUMENT_ACCEPT, IMAGE_ACCEPT, LAYOUT_ONLY_ACCEPT, downloadLink, emptyState, ingest, listBlock, sectionTitle, verificationView } from '../components.js';
 import { badge, button, checkbox, errorMessage, field, h, replace, select, toast } from '../dom.js';
 import { formatBytes, formatDuration, plural } from '../format.js';
 import type { JobHandle } from '../api.js';
 import type { AppContext } from '../store.js';
-import type { ConvertReport, ConvertResult, DocInfo, FormatsInfo, JobInfo, OutputFile, Settings } from '../types.js';
+import type { ConvertReport, ConvertResult, ConvertRoute, DocInfo, FormatsInfo, JobInfo, OutputFile, Settings } from '../types.js';
 import { WorkingSet } from '../workingset.js';
 import type { Workspace } from './types.js';
 
@@ -45,7 +45,7 @@ export function createConverter(ctx: AppContext): Workspace {
   function targetOptions(doc: DocInfo): { value: string; label: string }[] {
     if (!formats) return [{ value: opts.target, label: opts.target.toUpperCase() }];
     return formats.targets.filter((t) => t.available && (t.id === doc.format ||
-      formats!.routes.some((r) => r.from === doc.format && r.to === t.id && (opts.engine === 'model' ? r.model.available : r.libreoffice?.available))))
+      formats!.routes.some((r) => r.from === doc.format && r.to === t.id && routeAvailable(r))))
       .map((t) => ({ value: t.id, label: t.label }));
   }
   function refreshCommonTargets(): void {
@@ -70,7 +70,13 @@ export function createConverter(ctx: AppContext): Workspace {
   }
   function valid(doc: DocInfo, to: string): boolean {
     return !!to && (doc.format === to || !!formats?.routes.find((r) => r.from === doc.format && r.to === to &&
-      (opts.engine === 'model' ? r.model.available : r.libreoffice?.available)));
+      routeAvailable(r)));
+  }
+  // A route that only one engine can run (XLSX/PPTX/ODP -> PDF through LibreOffice) is offered whatever engine is selected;
+  // the server runs it with that engine.
+  function routeAvailable(r: ConvertRoute): boolean {
+    if (r.engineOnly) return !!r.libreoffice?.available;
+    return opts.engine === 'model' ? r.model.available : !!r.libreoffice?.available;
   }
   function showLimits(): void {
     const t = formats?.targets.find((x) => x.id === opts.target);
@@ -324,8 +330,8 @@ export function createConverter(ctx: AppContext): Workspace {
     await run(true, id);
   }
 
-  const dz = dropzone({ title: 'Drop files here', hint: 'Select multiple PDF, Word, OpenDocument, text or SLDC files',
-    accept: `${DOCUMENT_ACCEPT},${IMAGE_ACCEPT}`, onFiles: (files) => { void ingest(ctx, files, { images: true, tray: dz.tray }).then((docs) => set.add(...docs)); } });
+  const dz = dropzone({ title: 'Drop files here', hint: 'Select multiple PDF, Word, Excel, PowerPoint, OpenDocument, text or SLDC files',
+    accept: `${DOCUMENT_ACCEPT},${IMAGE_ACCEPT},${LAYOUT_ONLY_ACCEPT}`, onFiles: (files) => { void ingest(ctx, files, { images: true, tray: dz.tray }).then((docs) => set.add(...docs)); } });
   const el = h('div', { class: 'workspace converter' },
     h('header', { class: 'ws-head' }, h('h1', { text: 'Converter' }),
       h('p', { class: 'muted', text: 'Convert mixed document formats together, or choose a target for each file. Results are independently verified.' })),

@@ -27,6 +27,10 @@ FORMATS: dict[str, Format] = {f.id: f for f in (
     Format("doc", "Word 97-2003 (DOC)", (".doc",), "application/msword", "office"),
     Format("odt", "OpenDocument Text", (".odt",), "application/vnd.oasis.opendocument.text", "office"),
     Format("rtf", "Rich Text", (".rtf",), "application/rtf", "office"),
+    # Layout-only sources: LibreOffice renders them to PDF; Documaster has no reader for their content (see LAYOUT_ONLY).
+    Format("xlsx", "Excel (XLSX)", (".xlsx",), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "layout"),
+    Format("pptx", "PowerPoint (PPTX)", (".pptx",), "application/vnd.openxmlformats-officedocument.presentationml.presentation", "layout"),
+    Format("odp", "OpenDocument Presentation", (".odp",), "application/vnd.oasis.opendocument.presentation", "layout"),
     Format("html", "HTML", (".html", ".htm", ".xhtml"), "text/html", "text"),
     Format("md", "Markdown", (".md", ".markdown"), "text/markdown", "text"),
     Format("txt", "Plain text", (".txt", ".text", ".log"), "text/plain", "text"),
@@ -40,6 +44,9 @@ EXT_TO_FORMAT: dict[str, str] = {ext: f.id for f in FORMATS.values() for ext in 
 
 # Formats Documaster can produce from its document model.
 TARGETS = ("pdf", "docx", "odt", "rtf", "html", "md", "txt", "xml", "sldc", "png", "jpeg")
+
+#: Formats Documaster can only hand to LibreOffice (no reader, so no document model, word count or analysis) and the one target each has.
+LAYOUT_ONLY: dict[str, tuple[str, ...]] = {"xlsx": ("pdf",), "pptx": ("pdf",), "odp": ("pdf",)}
 
 
 def format_for_ext(name: str) -> str | None:
@@ -93,22 +100,35 @@ def _compatible(found: str, claimed: str) -> bool:
     return found in text_like and claimed in text_like
 
 
+def _read_head(archive: zipfile.ZipFile, name: str, limit: int = 64) -> bytes:
+    """The first ``limit`` bytes of a member. Never ``archive.read``: a tiny archive can declare a member that inflates to gigabytes."""
+    with archive.open(name) as member:
+        return member.read(limit)
+
+
 def _sniff_zip(path: Path) -> str | None:
     try:
         with zipfile.ZipFile(path) as archive:
             names = set(archive.namelist())
             if "manifest.json" in names and "mimetype" in names:
                 try:
-                    if archive.read("mimetype")[:64].startswith(b"application/x-slai-sldc"):
+                    if _read_head(archive, "mimetype").startswith(b"application/x-slai-sldc"):
                         return "sldc"
                 except (KeyError, RuntimeError):
                     pass
             if "word/document.xml" in names:
                 return "docx"
+            if "xl/workbook.xml" in names:
+                return "xlsx"
+            if "ppt/presentation.xml" in names:
+                return "pptx"
             if "mimetype" in names:
                 try:
-                    if archive.read("mimetype").strip() == b"application/vnd.oasis.opendocument.text":
+                    kind = _read_head(archive, "mimetype", 128).strip()
+                    if kind == b"application/vnd.oasis.opendocument.text":
                         return "odt"
+                    if kind == b"application/vnd.oasis.opendocument.presentation":
+                        return "odp"
                 except (KeyError, RuntimeError):
                     pass
     except (zipfile.BadZipFile, OSError):

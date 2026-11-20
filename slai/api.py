@@ -10,13 +10,13 @@ from . import __version__, capabilities, counter, merger, output_bundle
 from .app import App
 from .docmodel.convert import ConvertOptions, convert_file
 from .errors import DocumasterError, NotFound, UnsupportedOperation, ValidationFailed
-from .formats import FORMATS, TARGETS
+from .formats import FORMATS, LAYOUT_ONLY, TARGETS
 from .jobs import Job
 from .pdfops import docinfo, forms, ops, redact, textboxes
 from .pdfops.annotate import listing as annotation_listing
 from .pdfops.pdfio import open_reader
 from .pdfops.render import page_sizes, render_page
-from .router import Request, Response, ok, route
+from .router import Request, Response, coerce_int, id_list, ok, route
 from .services import JobControl
 
 
@@ -57,8 +57,14 @@ def job_cancel(app: App, req: Request) -> Any:
 # ---------------------------------------------------------------------------------------------- app
 @route("GET", "/api/health")
 def health(app: App, req: Request) -> Any:
-    return {"name": "SLAI Documaster", "version": __version__, "uptimeS": round(time.time() - app.started),
-            "documents": len(app.ws.documents)}
+    from . import engine, startup
+    out = {"name": "SLAI Documaster", "version": __version__, "uptimeS": round(time.time() - app.started),
+           "documents": len(app.ws.documents), "bundled": startup.BUNDLED}
+    if startup.BUNDLED:                                    # the installed desktop app: what it was built from
+        bundle = engine.find_bundle(startup.HERE)
+        if bundle is not None:
+            out["bundle"] = engine.bundle_summary(bundle)
+    return out
 
 
 @route("GET", "/api/capabilities")
@@ -149,7 +155,7 @@ def redo(app: App, req: Request) -> Any:
 @route("POST", "/api/documents/{id}/revision/{n}")
 def goto_revision(app: App, req: Request) -> Any:
     doc = app.ws.get(req.params["id"])
-    target = int(req.params["n"])
+    target = req.param_int("n")
     if not 0 <= target < len(doc.revisions):
         raise ValidationFailed("That revision does not exist")
     return app.ws.step(doc, target - doc.cursor).public()
@@ -171,8 +177,8 @@ def _download_name(doc: Any) -> str:
 def page_image(app: App, req: Request) -> Any:
     doc = app.ws.get(req.params["id"])
     app.ws.require_open(doc)
-    index = int(req.params["n"])
-    width = min(max(int(req.query.get("w", 240)), 40), 2400)
+    index = req.param_int("n")
+    width = req.query_int("w", 240, 40, 2400)
     fmt = "jpeg" if req.query.get("fmt") == "jpeg" else "png"
     if doc.format in ("png", "jpeg"):
         from PIL import Image
@@ -264,23 +270,26 @@ def count_text(app: App, req: Request) -> Any:
     text = b.get("text")
     if not isinstance(text, str):
         raise ValidationFailed("'text' must be a string")
-    return counter.count_text(text, top=int(b.get("top", 15)), goals=b.get("goals"))
+    if b.get("goals") is not None and not isinstance(b.get("goals"), dict):
+        raise ValidationFailed("'goals' must be an object")
+    return counter.count_text(text, top=coerce_int(b.get("top"), "top", 15, 1, 200), goals=b.get("goals"))
 
 
 @route("POST", "/api/count/documents")
 def count_documents(app: App, req: Request) -> Any:
     b = req.json()
-    ids = b.get("docs")
-    if not isinstance(ids, list) or not ids:
-        raise ValidationFailed("Choose at least one document")
+    ids = id_list(b.get("docs"))
     docs = [app.ws.get(i) for i in ids]
+    top = coerce_int(b.get("top"), "top", 15, 1, 200)
+    if b.get("goals") is not None and not isinstance(b.get("goals"), dict):
+        raise ValidationFailed("'goals' must be an object")
 
     def work(control: JobControl) -> Any:
         results = []
         for n, d in enumerate(docs):
             sub = _Slice(control, n, len(docs))
             try:
-                r = counter.count_document(app.svc, app.ws, d, top=int(b.get("top", 15)), goals=b.get("goals"),
+                r = counter.count_document(app.svc, app.ws, d, top=top, goals=b.get("goals"),
                                            ocr=bool(b.get("ocr")), ocr_lang=str(b.get("ocrLang", "eng")), control=sub)  # type: ignore[arg-type]
                 results.append({"id": d.id, "ok": True, "stats": r})
             except DocumasterError as exc:
@@ -311,9 +320,7 @@ class _Slice(JobControl):
 @route("POST", "/api/convert")
 def convert(app: App, req: Request) -> Any:
     b = req.json()
-    ids = b.get("docs")
-    if not isinstance(ids, list) or not ids:
-        raise ValidationFailed("Choose at least one document to convert")
+    ids = id_list(b.get("docs"))
     opts_in = b.get("options") or {}
     if not isinstance(opts_in, dict):
         raise ValidationFailed("'options' must be an object")
@@ -332,7 +339,7 @@ def convert(app: App, req: Request) -> Any:
                 ir = None
                 # Raster routes are handled directly by the image converter.  They
                 # cannot be parsed into the SLDC text/document model first.
-                if (o.engine == "model" and d.format != o.target
+                if (o.engine == "model" and d.format != o.target and d.format not in LAYOUT_ONLY
                         and d.format not in ('png', 'jpeg') and o.target not in ('png', 'jpeg')):
                     ir = app.ws.ir(d, sub, ocr=o.ocr, ocr_lang=o.ocr_lang)  # type: ignore[arg-type]
                 report = convert_file(app.svc, d.path, d.name, d.format, o, out_dir, sub, ir=ir)  # type: ignore[arg-type]
@@ -362,11 +369,9 @@ def convert_formats(app: App, req: Request) -> Any:
 @route("POST", "/api/merge/outline")
 def merge_outline(app: App, req: Request) -> Any:
     b = req.json()
-    ids = b.get("docs")
-    if not isinstance(ids, list) or not ids:
-        raise ValidationFailed("Add at least one document")
+    ids = id_list(b.get("docs"))
     mode = "pdf" if b.get("target", "pdf") == "pdf" else "model"
-    return merger.outline(app.svc, app.ws, ids, mode=mode, split_headings=int(b.get("splitHeadings", 0) or 0))
+    return merger.outline(app.svc, app.ws, ids, mode=mode, split_headings=coerce_int(b.get("splitHeadings"), "splitHeadings", 0, 0, 6))
 
 
 @route("POST", "/api/merge")

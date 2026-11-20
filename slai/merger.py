@@ -25,6 +25,7 @@ from .docmodel.writers import WriteOptions, get_writer
 from .errors import DocumasterError, OutputFailed, PasswordRequired, UnsupportedOperation, ValidationFailed
 from .files import atomic_output, sha256_file
 from .formats import TARGETS, ext_for, label_for
+from .router import coerce_int
 from .pdfops.organize import PdfSource, PlanItem, assemble, parse_plan, verify_assembly
 from .pdfops.render import page_sizes
 from .services import NO_CONTROL, JobControl, Services
@@ -103,9 +104,7 @@ def run_merge(svc: Services, ws: Any, req: dict[str, Any], control: JobControl =
     stem = stem_req or (f"{_stem(docs[0].name)}_merged" if len(docs) > 1 else f"{_stem(docs[0].name)}_organized")
     warnings: list[str] = []
     mode = "pdf" if target == "pdf" else "model"
-    split = int(req.get("splitHeadings", 0) or 0)
-    if not 0 <= split <= 6:
-        raise ValidationFailed("splitHeadings must be 0-6")
+    split = coerce_int(req.get("splitHeadings"), "splitHeadings", 0, 0, 6)
     control.report(0.03, "Reading documents")
     outlines = outline(svc, ws, ids, mode=mode, split_headings=split, control=control)
     counts = [len(o["pages"]) for o in outlines]

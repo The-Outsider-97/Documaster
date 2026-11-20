@@ -4,6 +4,8 @@ import { badge, button, errorMessage, h, promptPassword, replace, toast } from '
 import { formatBytes, formatDuration } from './format.js';
 export const DOCUMENT_ACCEPT = '.pdf,.sldc,.docx,.doc,.odt,.rtf,.html,.htm,.md,.markdown,.txt,.xml,.csv';
 export const IMAGE_ACCEPT = '.png,.jpg,.jpeg';
+// Only the converter takes these: LibreOffice renders them to PDF, but nothing else in Documaster can read their content.
+export const LAYOUT_ONLY_ACCEPT = '.xlsx,.pptx,.odp';
 /** Upload files one after another, show their progress, ask for passwords of protected files, and return what was added. */
 export async function ingest(ctx, files, opts = {}) {
     const added = [];

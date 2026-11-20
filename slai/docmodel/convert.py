@@ -21,19 +21,20 @@ from typing import Any
 from ..bridge import sldc
 from ..errors import DependencyMissing, DocumasterError, OutputFailed, UnsupportedOperation, ValidationFailed
 from ..files import atomic_output, reserve_path, sha256_file
-from ..formats import FORMATS, TARGETS, ext_for, label_for
+from ..formats import FORMATS, LAYOUT_ONLY, TARGETS, ext_for, label_for, sniff
 from ..services import NO_CONTROL, JobControl, Services
 from .readers import read_document, soffice_convert
 from .verify import verify_written, words_of
 from .writers import WriteOptions, WriteResult, get_writer
 
 LO_TARGETS = {"pdf": "pdf", "docx": "docx", "odt": "odt", "rtf": "rtf", "html": "html", "txt": "txt"}
-LO_SOURCES = {"docx", "doc", "odt", "rtf", "html", "txt", "md"}
+LO_SOURCES = {"docx", "doc", "odt", "rtf", "html", "txt", "md", *LAYOUT_ONLY}
 
 
 @dataclass
 class ConvertOptions:
     target: str
+    retain_same_format: bool = False
     engine: str = "model"
     password: str | None = None
     ocr: bool = False
@@ -55,8 +56,11 @@ class ConvertOptions:
         clean = {k: v for k, v in data.items() if k in known and v is not None}
         if "target" not in clean:
             raise ValidationFailed("A target format is required")
+        for number in ("font_size_pt", "margins_mm"):          # numbers must be numbers (a string would fail later as a TypeError)
+            if number in clean and (isinstance(clean[number], bool) or not isinstance(clean[number], (int, float))):
+                raise ValidationFailed(f"{number} must be a number")
         opts = cls(**clean)
-        if opts.target not in TARGETS:
+        if not isinstance(opts.target, str) or opts.target not in TARGETS:
             raise ValidationFailed(f"Unsupported target format {opts.target!r}", details={"supported": list(TARGETS)})
         if opts.engine not in ("model", "libreoffice"):
             raise ValidationFailed("engine must be 'model' or 'libreoffice'")
@@ -87,8 +91,23 @@ def convert_file(svc: Services, source: Path, source_name: str, source_fmt: str,
     started = time.perf_counter()
     target = opts.target
     if source_fmt == target:
+        if opts.retain_same_format:
+            return _retain_original(source, source_name, source_fmt, out_dir, control, started)
         raise ValidationFailed(f"The file is already {label_for(target)}. Choose another target format.",
                                code="same_format")
+    if source_fmt in ('png', 'jpeg') or target in ('png', 'jpeg'):
+        if opts.engine != 'model':
+            raise UnsupportedOperation('Image conversions use the Documaster raster engine, not LibreOffice')
+        from .image_convert import convert_images
+        return convert_images(svc, source, source_name, source_fmt, target, out_dir, control, opts.password)
+    if source_fmt in LAYOUT_ONLY:       # no reader exists for these, so LibreOffice is the only engine, and only the listed targets exist
+        if not svc.tools.soffice:
+            raise DependencyMissing(f"{label_for(source_fmt)} files are converted with LibreOffice, which is not installed.",
+                                    details={"needs": "LibreOffice"})
+        if target not in LAYOUT_ONLY[source_fmt]:
+            raise UnsupportedOperation(f"{label_for(source_fmt)} can only be converted to {', '.join(label_for(t) for t in LAYOUT_ONLY[source_fmt])}",
+                                       details={"from": source_fmt, "to": target})
+        return _convert_libreoffice(svc, source, source_name, source_fmt, opts, out_dir, control, started)
     if opts.engine == "libreoffice":
         return _convert_libreoffice(svc, source, source_name, source_fmt, opts, out_dir, control, started)
     control.report(0.02, "Reading the document")
@@ -136,6 +155,32 @@ def convert_file(svc: Services, source: Path, source_name: str, source_fmt: str,
                    started, opts)
 
 
+def _retain_original(source: Path, name: str, fmt: str, out_dir: Path, control: JobControl, started: float) -> dict[str, Any]:
+    """Explicit lossless same-format policy; default conversion behaviour remains unchanged."""
+    control.check()
+    stem = _free_stem(out_dir, Path(name).stem or 'document', ext_for(fmt), False)
+    with atomic_output(out_dir, stem, ext_for(fmt)) as out:
+        shutil.copyfile(source, out.temp)
+        if sha256_file(source) != sha256_file(out.temp):
+            raise OutputFailed('The retained source bytes did not match the original')
+        check = sniff(out.temp, name)
+        if check['format'] != fmt:
+            raise OutputFailed('The retained output does not have the expected format')
+        final = out.commit()
+    control.report(1, 'Original retained unchanged')
+    verification = {'ok': True, 'checks': [
+        {'name': 'Source bytes', 'ok': True, 'detail': 'SHA-256 matches the original'},
+        {'name': 'Format signature', 'ok': True, 'detail': f'Confirmed {label_for(fmt)}'}]}
+    return {
+        'input': {'name': name, 'format': fmt, 'bytes': source.stat().st_size},
+        'output': {'path': str(final), 'name': final.name, 'format': fmt, 'bytes': final.stat().st_size,
+                   'sha256': sha256_file(final), 'pages': None, 'extras': []},
+        'engine': 'copy', 'backend': {'read': 'byte-preserving copy', 'write': 'byte-preserving copy'},
+        'kept': ['All original content and bytes'], 'lost': [], 'warnings': [], 'ocrPages': [],
+        'verification': verification, 'durationMs': round((time.perf_counter() - started) * 1000),
+    }
+
+
 def _encrypt_sldc(path: Path, password: str) -> None:
     s = sldc()
     try:
@@ -176,7 +221,8 @@ def _convert_libreoffice(svc: Services, source: Path, source_name: str, source_f
             "document-model engine", details={"from": source_fmt, "to": target})
     control.report(0.1, "Converting with LibreOffice")
     with tempfile.TemporaryDirectory(prefix="dm-lo-") as tmp:
-        produced = soffice_convert(svc, source, LO_TARGETS[target], Path(tmp), control)
+        produced = soffice_convert(svc, source, LO_TARGETS[target], Path(tmp), control,
+                                   infilter="HTML (StarWriter)" if source_fmt == "html" else None)
         control.report(0.7, "Verifying the output")
         expected = None
         try:

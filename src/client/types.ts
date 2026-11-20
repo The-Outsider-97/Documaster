@@ -55,7 +55,7 @@ export interface ConvertItem { id: string; name?: string; ok: boolean; report?: 
 export interface ConvertResult { results: ConvertItem[]; succeeded: number; failed: number }
 
 export interface FormatTarget { id: string; label: string; available: boolean; limits: string[] }
-export interface ConvertRoute { from: string; to: string; model: { available: boolean; layoutPreserved: boolean }; libreoffice: { available: boolean; layoutPreserved: boolean } | null }
+export interface ConvertRoute { from: string; to: string; engineOnly?: string | null; model: { available: boolean; layoutPreserved: boolean }; libreoffice: { available: boolean; layoutPreserved: boolean } | null }
 export interface FormatsInfo { targets: FormatTarget[]; engines: { libreoffice: boolean; ocr: boolean }; routes: ConvertRoute[] }
 
 export interface CountStats {

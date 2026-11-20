@@ -15,7 +15,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / 'tests_py'))
 from support import Harness, TOKEN, ROOT, make_docx, make_pdf  # noqa: E402
 
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import expect, sync_playwright
 from pypdf import PdfReader
 from slai.pdfops.textboxes import listing
 
@@ -45,14 +45,14 @@ def main() -> int:
 
                 page.click('a[data-ws=converter]')
                 page.set_input_files('.converter input[type=file]', [str(docx), str(pdf), str(txt)])
-                page.wait_for_function('document.querySelectorAll(".converter .convert-row").length === 3', timeout=20000)
+                expect(page.locator('.converter .convert-row')).to_have_count(3, timeout=20000)  # no string eval: the app CSP forbids it
                 page.locator('.converter .options select').first.select_option('individual')
                 rows = page.locator('.converter .convert-row')
                 rows.nth(0).locator('select').select_option('pdf')  # Word -> PDF
                 rows.nth(1).locator('select').select_option('txt')  # PDF -> text
                 rows.nth(2).locator('select').select_option('pdf')  # text -> PDF
                 page.get_by_role('button', name='Convert All').click()
-                page.wait_for_function('document.querySelectorAll(".converter .card.result:not(.bad)").length === 3', timeout=90000)
+                expect(page.locator('.converter .card.result:not(.bad)')).to_have_count(3, timeout=90000)
                 assert page.locator('.converter .card.result:not(.bad)').count() == 3
                 assert page.locator('.converter .card.result.bad').count() == 0
                 with page.expect_download(timeout=30000) as downloaded:

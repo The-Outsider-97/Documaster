@@ -10,6 +10,7 @@ Counting rules (also shown to the user):
   which under-counts; the report says so when such text is present.
 * A *sentence* ends at ``. ! ? 。 ！ ？ …`` followed by space/end, except after a short list of common abbreviations: titles
   (``Dr.``) never end a sentence, other abbreviations (``etc.``, ``p.m.``) only when the next word starts in lower case.
+* An invisible soft hyphen (U+00AD) inside a word does not split it.
 * Reading time uses 238 words per minute (silent reading, adult average), speaking time 150.
 
 The language guess is a heuristic (script plus stop-word profile). It is labelled as a guess with a confidence and
@@ -51,7 +52,8 @@ SPEAK_WPM = 150
 
 
 def tokenize(text: str) -> list[str]:
-    return _WORD.findall(text)
+    # U+00AD (soft hyphen) is an invisible hyphenation hint inside a word, common in text copied from PDFs; it never splits a word.
+    return _WORD.findall(text.replace("\u00ad", ""))
 
 
 def count_sentences(text: str) -> int:

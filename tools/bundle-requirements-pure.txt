@@ -1,0 +1,5 @@
+# Optional, pure-Python packages that are published as source only. The builder installs them with --no-deps and refuses them if they
+# turn out to contain compiled code. SLAI's spell checker (phonetic suggestions) and its resource monitor use them when present and work
+# without them.
+Metaphone==0.6
+GPUtil==1.4.0

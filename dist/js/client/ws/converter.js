@@ -1,5 +1,5 @@
 // Mixed-format batch converter. Each file is an independent, cancellable, verified server job.
-import { dropzone, docRow, DOCUMENT_ACCEPT, IMAGE_ACCEPT, downloadLink, emptyState, ingest, listBlock, sectionTitle, verificationView } from '../components.js';
+import { dropzone, docRow, DOCUMENT_ACCEPT, IMAGE_ACCEPT, LAYOUT_ONLY_ACCEPT, downloadLink, emptyState, ingest, listBlock, sectionTitle, verificationView } from '../components.js';
 import { badge, button, checkbox, errorMessage, field, h, replace, select, toast } from '../dom.js';
 import { formatBytes, formatDuration, plural } from '../format.js';
 import { WorkingSet } from '../workingset.js';
@@ -32,7 +32,7 @@ export function createConverter(ctx) {
         if (!formats)
             return [{ value: opts.target, label: opts.target.toUpperCase() }];
         return formats.targets.filter((t) => t.available && (t.id === doc.format ||
-            formats.routes.some((r) => r.from === doc.format && r.to === t.id && (opts.engine === 'model' ? r.model.available : r.libreoffice?.available))))
+            formats.routes.some((r) => r.from === doc.format && r.to === t.id && routeAvailable(r))))
             .map((t) => ({ value: t.id, label: t.label }));
     }
     function refreshCommonTargets() {
@@ -60,7 +60,14 @@ export function createConverter(ctx) {
     }
     function valid(doc, to) {
         return !!to && (doc.format === to || !!formats?.routes.find((r) => r.from === doc.format && r.to === to &&
-            (opts.engine === 'model' ? r.model.available : r.libreoffice?.available)));
+            routeAvailable(r)));
+    }
+    // A route that only one engine can run (XLSX/PPTX/ODP -> PDF through LibreOffice) is offered whatever engine is selected;
+    // the server runs it with that engine.
+    function routeAvailable(r) {
+        if (r.engineOnly)
+            return !!r.libreoffice?.available;
+        return opts.engine === 'model' ? r.model.available : !!r.libreoffice?.available;
     }
     function showLimits() {
         const t = formats?.targets.find((x) => x.id === opts.target);
@@ -323,8 +330,8 @@ export function createConverter(ctx) {
             return;
         await run(true, id);
     }
-    const dz = dropzone({ title: 'Drop files here', hint: 'Select multiple PDF, Word, OpenDocument, text or SLDC files',
-        accept: `${DOCUMENT_ACCEPT},${IMAGE_ACCEPT}`, onFiles: (files) => { void ingest(ctx, files, { images: true, tray: dz.tray }).then((docs) => set.add(...docs)); } });
+    const dz = dropzone({ title: 'Drop files here', hint: 'Select multiple PDF, Word, Excel, PowerPoint, OpenDocument, text or SLDC files',
+        accept: `${DOCUMENT_ACCEPT},${IMAGE_ACCEPT},${LAYOUT_ONLY_ACCEPT}`, onFiles: (files) => { void ingest(ctx, files, { images: true, tray: dz.tray }).then((docs) => set.add(...docs)); } });
     const el = h('div', { class: 'workspace converter' }, h('header', { class: 'ws-head' }, h('h1', { text: 'Converter' }), h('p', { class: 'muted', text: 'Convert mixed document formats together, or choose a target for each file. Results are independently verified.' })), h('div', { class: 'two-col' }, h('div', { class: 'col' }, dz.el, set.picker(), sectionTitle('Conversion queue', clearBtn), docList, h('div', { class: 'card options' }, field('Conversion mode', chooseMode), field('Common output format', target), limits, field('Parallel conversions', select([{ value: '1', label: '1 (lowest resource use)' },
         { value: '2', label: '2 (default)' }, { value: '3', label: '3 (faster on capable systems)' }], '2', (v) => { if (!running)
         concurrency = Number(v); })), h('details', { class: 'more' }, h('summary', { text: 'Options' }), advanced), h('div', { class: 'row-actions wrap' }, convertBtn, cancelBtn, retryBtn), batchStatus), h('div', { class: 'card options' }, field('Local output folder', folderInput, 'Outputs are also stored here by the local Documaster service. Choose a folder path on this computer.'), button('Set output folder', () => {

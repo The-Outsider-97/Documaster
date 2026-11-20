@@ -10,7 +10,7 @@ __pycache__/
 .Python
 build/
 develop-eggs/
-dist/
+# dist/ is NOT ignored: the built web client is committed so Documaster starts without Node.js.
 downloads/
 eggs/
 .eggs/
@@ -218,3 +218,12 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Documaster
+node_modules/
+*.tsbuildinfo
+tests_e2e/shots/
+
+# Desktop app build output (tools/build_bundle.py; src-tauri/.gitignore covers target/ and engine/)
+.bundle-cache/
+src-tauri/engine/

@@ -12,6 +12,7 @@ import tempfile
 from pathlib import Path
 
 from ..errors import DependencyMissing, ValidationFailed
+from ..procs import run_bounded
 from ..services import Tools
 
 
@@ -62,8 +63,7 @@ def recognise_png(tools: Tools, png: bytes, lang: str, timeout: int) -> str:
         image = Path(tmp) / "page.png"
         image.write_bytes(png)
         try:
-            result = subprocess.run([tools.tesseract, str(image), "stdout", "-l", lang, "--psm", "3"],
-                                    capture_output=True, timeout=timeout)
+            result = run_bounded([tools.tesseract, str(image), "stdout", "-l", lang, "--psm", "3"], timeout)
         except subprocess.TimeoutExpired as exc:
             raise DependencyMissing("Tesseract took too long on this page") from exc
         if result.returncode != 0:

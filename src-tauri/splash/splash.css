@@ -1,0 +1,14 @@
+:root { --bg: #e8ecf1; --text: #1f2933; --muted: #5b6876; --accent: #2f6fdb; --bad: #b3261e; color-scheme: light dark; }
+@media (prefers-color-scheme: dark) { :root { --bg: #1b2028; --text: #e6ebf1; --muted: #9aa7b5; --accent: #6ea4ff; --bad: #ff8a80; } }
+html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { min-height: 100%; display: grid; place-content: center; justify-items: center; gap: .6rem; padding: 16px; text-align: center; }
+.mark { width: 4.5rem; height: 4.5rem; display: grid; place-items: center; border-radius: 1.2rem; font-size: 2.6rem; font-weight: 600; color: var(--accent); background: var(--bg); box-shadow: 6px 6px 14px rgba(0,0,0,.18), -6px -6px 14px rgba(255,255,255,.12); }
+h1 { margin: .3rem 0 0; font-size: 1.4rem; }
+p { margin: 0; color: var(--muted); max-width: 34rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+pre { margin: .4rem 0 0; max-width: min(46rem, 92vw); max-height: 14rem; overflow: auto; padding: .7rem .9rem; text-align: left; font: 12px/1.45 ui-monospace, Consolas, monospace; color: var(--text); background: rgba(127,127,127,.14); border-radius: .5rem; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+.bar { width: 12rem; height: 4px; border-radius: 2px; background: rgba(127,127,127,.25); overflow: hidden; }
+.bar i { display: block; height: 100%; width: 40%; background: var(--accent); border-radius: 2px; animation: slide 1.4s ease-in-out infinite; }
+.failed .bar { display: none; }
+.failed p { color: var(--bad); }
+@keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }
+@media (prefers-reduced-motion: reduce) { .bar i { animation: none; width: 100%; opacity: .5; } }

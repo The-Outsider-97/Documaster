@@ -7,6 +7,8 @@ import type { DocInfo, JobInfo } from './types.js';
 
 export const DOCUMENT_ACCEPT = '.pdf,.sldc,.docx,.doc,.odt,.rtf,.html,.htm,.md,.markdown,.txt,.xml,.csv';
 export const IMAGE_ACCEPT = '.png,.jpg,.jpeg';
+// Only the converter takes these: LibreOffice renders them to PDF, but nothing else in Documaster can read their content.
+export const LAYOUT_ONLY_ACCEPT = '.xlsx,.pptx,.odp';
 
 // ---- upload ------------------------------------------------------------------------------------------------------
 export interface IngestOptions { images?: boolean; onDone?: (docs: DocInfo[]) => void; tray?: HTMLElement }

@@ -1,0 +1,4 @@
+/target/
+/gen/
+# the bundle made by tools/build_bundle.py (Python, packages, SLAI, model): about a gigabyte, rebuilt on demand
+/engine/

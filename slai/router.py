@@ -11,6 +11,33 @@ from .errors import FileRejected, LimitExceeded, ValidationFailed
 MAX_JSON_BYTES = 64 * 1024 * 1024
 
 
+def coerce_int(value: Any, name: str, default: int | None = None, lo: int | None = None, hi: int | None = None) -> int:
+    """A whole number from a query string or JSON value, or a clean 400 (never a traceback). Booleans and fractions are not whole numbers."""
+    if value is None or value == "":
+        if default is None:
+            raise ValidationFailed(f"'{name}' is required")
+        return default
+    if isinstance(value, bool) or isinstance(value, float) and not value.is_integer():
+        raise ValidationFailed(f"'{name}' must be a whole number")
+    try:
+        number = int(value)
+    except (TypeError, ValueError, OverflowError):
+        raise ValidationFailed(f"'{name}' must be a whole number") from None
+    if (lo is not None and number < lo) or (hi is not None and number > hi):
+        span = f"between {lo} and {hi}" if lo is not None and hi is not None else (f"at least {lo}" if lo is not None else f"at most {hi}")
+        raise ValidationFailed(f"'{name}' must be {span}")
+    return number
+
+
+def id_list(value: Any, name: str = "docs", *, maximum: int = 1000) -> list[str]:
+    """A non-empty list of identifiers (strings)."""
+    if not isinstance(value, list) or not value:
+        raise ValidationFailed(f"'{name}' must be a non-empty list")
+    if len(value) > maximum or not all(isinstance(v, str) for v in value):
+        raise ValidationFailed(f"'{name}' must be a list of at most {maximum} identifiers")
+    return value
+
+
 @dataclass
 class Request:
     method: str
@@ -39,6 +66,12 @@ class Request:
         if not isinstance(self._json, dict):
             raise ValidationFailed("The request body must be a JSON object")
         return self._json
+
+    def query_int(self, name: str, default: int, lo: int | None = None, hi: int | None = None) -> int:
+        return coerce_int(self.query.get(name), name, default, lo, hi)
+
+    def param_int(self, name: str) -> int:
+        return coerce_int(self.params.get(name), name)
 
     def body_bytes(self, limit: int) -> bytes:
         if self.stream is None or self.length is None:

@@ -23,8 +23,10 @@ from .config import Settings
 from .errors import (FileRejected, LimitExceeded, NotFound, PasswordRequired, UnsupportedOperation, ValidationFailed,
                      WrongPassword)
 from .files import free_bytes, replace_file, rmtree_quiet, safe_filename, sha256_file
-from .formats import FORMATS, format_for_ext, label_for, sniff
+from .formats import FORMATS, LAYOUT_ONLY, format_for_ext, label_for, sniff
 from .services import Services
+
+MAX_DOCX_PART = 256 * 1024 * 1024      # one XML part of a Word file; python-docx loads a part whole
 
 
 @dataclass
@@ -223,11 +225,11 @@ class Workspace:
         warnings: list[str] = []
         if fmt is None:
             fmt = sniffed["claimed"]
-            if fmt is None or (fmt in ("png", "jpeg") and not allow_images):
+            if fmt is None or (fmt in ("png", "jpeg", *LAYOUT_ONLY) and not allow_images):
                 raise FileRejected(f"'{name}' is not a document type Documaster can open"
                                    + (f" ({sniffed['note']})" if sniffed["note"] else ""),
                                    details={"note": sniffed["note"]})
-            if fmt in ("docx", "odt", "pdf", "sldc"):
+            if fmt in ("docx", "odt", "pdf", "sldc", *LAYOUT_ONLY):
                 raise FileRejected(f"'{name}' has a {label_for(fmt)} extension but its content is not a {label_for(fmt)} file "
                                    "(it may be damaged or a different format)")
         if sniffed["mismatch"]:
@@ -235,6 +237,9 @@ class Workspace:
                             f"{label_for(fmt)}; it is treated as {label_for(fmt)}")
         if fmt in ("png", "jpeg") and not allow_images:
             raise UnsupportedOperation("Images are not documents. Add them to a PDF in the Merger instead.")
+        if fmt in LAYOUT_ONLY and not allow_images:        # the converter's upload flag: only it can do anything with these
+            raise UnsupportedOperation(f"{label_for(fmt)} files can only be converted to PDF (in the Converter); "
+                                       "Documaster cannot read their content for this tool.")
         ext = FORMATS[fmt].exts[0]
         final = original.with_name("rev-0" + ext)
         replace_file(original, final)
@@ -313,6 +318,8 @@ class Workspace:
                     names = z.namelist()
                     if len(names) > 5000 or sum(i.file_size for i in z.infolist()) > 1024 ** 3:
                         raise FileRejected("This DOCX archive is larger than the safety limit")
+                    if any(i.file_size > MAX_DOCX_PART and i.filename.lower().endswith((".xml", ".rels")) for i in z.infolist()):
+                        raise FileRejected("A part of this DOCX is larger than the safety limit")
                     if any(n.startswith("word/vbaProject") for n in names):
                         doc.warnings.append("This file contains macros. Documaster never runs macros.")
             except zipfile.BadZipFile as exc:

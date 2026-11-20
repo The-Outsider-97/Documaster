@@ -1,0 +1,11 @@
+{
+  "_comment": "What tools/build_bundle.py downloads. The embeddable Python is fetched from python.org and checked against sha256; while sha256 is empty the first download is accepted only with --trust-first-download, and the digest it printed is then written here so every later build is checked.",
+  "python": {
+    "version": "3.13.14",
+    "url": "https://www.python.org/ftp/python/3.13.14/python-3.13.14-embed-amd64.zip",
+    "sha256": "",
+    "pip_platform": "win_amd64",
+    "pip_python_version": "3.13",
+    "pip_abi": "cp313"
+  }
+}

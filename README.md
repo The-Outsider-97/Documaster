@@ -107,6 +107,10 @@ tools/                build-static.mjs, make_reports.py, probe_agents.py
 docs/                 USER_GUIDE.md and reports A-H
 ```
 
+## Desktop app
+
+A self-contained Windows installer (Tauri 2 shell, bundled Python, SLAI, agents and the language model) is built with `build-windows.cmd`; see [docs/DESKTOP_APP.md](docs/DESKTOP_APP.md) for the architecture, what is bundled, the size budget and what has not been built or run.
+
 ## Reports
 
 | | |

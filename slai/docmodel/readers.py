@@ -35,6 +35,7 @@ from ..errors import (DependencyMissing, FileRejected, LimitExceeded, PasswordRe
                       WrongPassword)
 from ..files import sha256_file
 from ..formats import FORMATS, format_for_ext, sniff
+from ..procs import run_bounded
 from ..services import NO_CONTROL, JobControl, Services
 from . import ocr as ocrmod
 from .ir import IRResult, build_package, clamp_title, import_provenance, parse_inline
@@ -453,17 +454,18 @@ def _read_via_soffice(path: Path, fmt: str, svc: Services, name: str, control: J
 
 
 def soffice_convert(svc: Services, source: Path, target_ext: str, out_dir: Path, control: JobControl = NO_CONTROL,
-                    filter_name: str | None = None) -> Path:
+                    filter_name: str | None = None, infilter: str | None = None) -> Path:
     """Run LibreOffice headless in an isolated profile; returns the produced file or raises."""
     if not svc.tools.soffice:
         raise DependencyMissing("LibreOffice (soffice) is not installed")
     control.check()
     profile = Path(tempfile.mkdtemp(prefix="dm-lo-profile-"))
     arg = target_ext if not filter_name else f"{target_ext}:{filter_name}"
+    # HTML opens in Writer/Web by default, which has no DOCX/RTF export filter; --infilter makes Writer load it as a text document.
     cmd = [svc.tools.soffice, f"-env:UserInstallation={profile.as_uri()}", "--headless", "--norestore",
-           "--convert-to", arg, "--outdir", str(out_dir), str(source)]
+           *([f"--infilter={infilter}"] if infilter else []), "--convert-to", arg, "--outdir", str(out_dir), str(source)]
     try:
-        run = subprocess.run(cmd, capture_output=True, timeout=svc.settings.subprocess_timeout_s)
+        run = run_bounded(cmd, svc.settings.subprocess_timeout_s)
     except subprocess.TimeoutExpired as exc:
         raise FileRejected("LibreOffice took too long to convert this file") from exc
     finally:

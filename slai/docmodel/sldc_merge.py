@@ -488,7 +488,11 @@ def merge_units(units: list[MergeUnit], plan: list[dict[str, Any]] | None = None
         warnings.append(f"{signed} signature(s) were not carried over: a signature covers one revision of one document, and "
                         "the merged document is a new revision. It has not been re-signed.")
 
-    package = s.SLDCPackage(document, out_assets, comments, [], first_unit.package.version)
+    # The result carries the newest SLDC version among its sources: a PDF (1.0) merged with a Word document that uses 1.1 features
+    # (page bands, paragraph layout, ...) must not be written as 1.0, which SLDC refuses. SLAI's own helper does the numeric comparison.
+    versions = [units[u].package.version for u in sorted(used_units)] or [first_unit.package.version]
+    version = s.newest_version(*versions) if hasattr(s, "newest_version") else first_unit.package.version
+    package = s.SLDCPackage(document, out_assets, comments, [], version)
     try:
         package = s.next_revision(package, author=author or None, note=f"Merged {len(used_units)} document(s)")
         s.validate_package(package)

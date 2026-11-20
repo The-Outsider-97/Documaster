@@ -1,0 +1,1630 @@
+{
+ "marker": "Zanzibar",
+ "targets": [
+  "pdf",
+  "docx",
+  "odt",
+  "rtf",
+  "html",
+  "md",
+  "txt",
+  "xml",
+  "sldc",
+  "png",
+  "jpeg"
+ ],
+ "cells": {
+  "docx": {
+   "pdf": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 40552,
+    "verified": true
+   },
+   "pdf@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 14055,
+    "verified": true
+   },
+   "docx": {
+    "result": "refused",
+    "detail": "same_format: The file is already Word (DOCX). Choose another target format."
+   },
+   "docx@lo": {
+    "result": "refused",
+    "detail": "same_format: The file is already Word (DOCX). Choose another target format."
+   },
+   "odt": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 3157,
+    "verified": true
+   },
+   "odt@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 13550,
+    "verified": true
+   },
+   "rtf": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 2411,
+    "verified": true
+   },
+   "rtf@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 18255,
+    "verified": true
+   },
+   "html": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 1719,
+    "verified": true
+   },
+   "html@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 1416,
+    "verified": true
+   },
+   "md": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 77,
+    "verified": true
+   },
+   "md@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert Word (DOCX) to Markdown in Documaster; use the document-model engine"
+   },
+   "txt": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 71,
+    "verified": true
+   },
+   "txt@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 72,
+    "verified": true
+   },
+   "xml": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 340,
+    "verified": true
+   },
+   "xml@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert Word (DOCX) to XML in Documaster; use the document-model engine"
+   },
+   "sldc": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 1190,
+    "verified": true
+   },
+   "sldc@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert Word (DOCX) to SLDC in Documaster; use the document-model engine"
+   },
+   "png": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from docx to png is not available"
+   },
+   "png@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   },
+   "jpeg": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from docx to jpeg is not available"
+   },
+   "jpeg@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   }
+  },
+  "pdf": {
+   "pdf": {
+    "result": "refused",
+    "detail": "same_format: The file is already PDF. Choose another target format."
+   },
+   "pdf@lo": {
+    "result": "refused",
+    "detail": "same_format: The file is already PDF. Choose another target format."
+   },
+   "docx": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 37826,
+    "verified": true
+   },
+   "docx@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert PDF to Word (DOCX) in Documaster; use the document-model engine"
+   },
+   "odt": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 3078,
+    "verified": true
+   },
+   "odt@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert PDF to OpenDocument Text in Documaster; use the document-model engine"
+   },
+   "rtf": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 2363,
+    "verified": true
+   },
+   "rtf@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert PDF to Rich Text in Documaster; use the document-model engine"
+   },
+   "html": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 1604,
+    "verified": true
+   },
+   "html@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert PDF to HTML in Documaster; use the document-model engine"
+   },
+   "md": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 42,
+    "verified": true
+   },
+   "md@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert PDF to Markdown in Documaster; use the document-model engine"
+   },
+   "txt": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 42,
+    "verified": true
+   },
+   "txt@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert PDF to Plain text in Documaster; use the document-model engine"
+   },
+   "xml": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 238,
+    "verified": true
+   },
+   "xml@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert PDF to XML in Documaster; use the document-model engine"
+   },
+   "sldc": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 958,
+    "verified": true
+   },
+   "sldc@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert PDF to SLDC in Documaster; use the document-model engine"
+   },
+   "png": {
+    "result": "ok-nomark",
+    "engine": "raster",
+    "bytes": 19786,
+    "verified": true
+   },
+   "png@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   },
+   "jpeg": {
+    "result": "ok-nomark",
+    "engine": "raster",
+    "bytes": 19363,
+    "verified": true
+   },
+   "jpeg@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   }
+  },
+  "txt": {
+   "pdf": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 21058,
+    "verified": true
+   },
+   "pdf@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 9981,
+    "verified": true
+   },
+   "docx": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 37833,
+    "verified": true
+   },
+   "docx@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 5003,
+    "verified": true
+   },
+   "odt": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 3063,
+    "verified": true
+   },
+   "odt@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 9235,
+    "verified": true
+   },
+   "rtf": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 2376,
+    "verified": true
+   },
+   "rtf@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 2488,
+    "verified": true
+   },
+   "html": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 1625,
+    "verified": true
+   },
+   "html@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 846,
+    "verified": true
+   },
+   "md": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 48,
+    "verified": true
+   },
+   "md@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert Plain text to Markdown in Documaster; use the document-model engine"
+   },
+   "txt": {
+    "result": "refused",
+    "detail": "same_format: The file is already Plain text. Choose another target format."
+   },
+   "txt@lo": {
+    "result": "refused",
+    "detail": "same_format: The file is already Plain text. Choose another target format."
+   },
+   "xml": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 261,
+    "verified": true
+   },
+   "xml@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert Plain text to XML in Documaster; use the document-model engine"
+   },
+   "sldc": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 1020,
+    "verified": true
+   },
+   "sldc@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert Plain text to SLDC in Documaster; use the document-model engine"
+   },
+   "png": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from txt to png is not available"
+   },
+   "png@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   },
+   "jpeg": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from txt to jpeg is not available"
+   },
+   "jpeg@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   }
+  },
+  "md": {
+   "pdf": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 40659,
+    "verified": true
+   },
+   "pdf@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 9897,
+    "verified": true
+   },
+   "docx": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 37869,
+    "verified": true
+   },
+   "docx@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 5013,
+    "verified": true
+   },
+   "odt": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 3115,
+    "verified": true
+   },
+   "odt@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 9156,
+    "verified": true
+   },
+   "rtf": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 2448,
+    "verified": true
+   },
+   "rtf@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 2702,
+    "verified": true
+   },
+   "html": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 1650,
+    "verified": true
+   },
+   "html@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 844,
+    "verified": true
+   },
+   "md": {
+    "result": "refused",
+    "detail": "same_format: The file is already Markdown. Choose another target format."
+   },
+   "md@lo": {
+    "result": "refused",
+    "detail": "same_format: The file is already Markdown. Choose another target format."
+   },
+   "txt": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 46,
+    "verified": true
+   },
+   "txt@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 49,
+    "verified": true
+   },
+   "xml": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 329,
+    "verified": true
+   },
+   "xml@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert Markdown to XML in Documaster; use the document-model engine"
+   },
+   "sldc": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 1062,
+    "verified": true
+   },
+   "sldc@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert Markdown to SLDC in Documaster; use the document-model engine"
+   },
+   "png": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from md to png is not available"
+   },
+   "png@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   },
+   "jpeg": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from md to jpeg is not available"
+   },
+   "jpeg@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   }
+  },
+  "html": {
+   "pdf": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 40529,
+    "verified": true
+   },
+   "pdf@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 15686,
+    "verified": true
+   },
+   "docx": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 37850,
+    "verified": true
+   },
+   "docx@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 4982,
+    "verified": true
+   },
+   "odt": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 3095,
+    "verified": true
+   },
+   "odt@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 9476,
+    "verified": true
+   },
+   "rtf": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 2391,
+    "verified": true
+   },
+   "rtf@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 2332,
+    "verified": true
+   },
+   "html": {
+    "result": "refused",
+    "detail": "same_format: The file is already HTML. Choose another target format."
+   },
+   "html@lo": {
+    "result": "refused",
+    "detail": "same_format: The file is already HTML. Choose another target format."
+   },
+   "md": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 38,
+    "verified": true
+   },
+   "md@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert HTML to Markdown in Documaster; use the document-model engine"
+   },
+   "txt": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 36,
+    "verified": true
+   },
+   "txt@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 38,
+    "verified": true
+   },
+   "xml": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 271,
+    "verified": true
+   },
+   "xml@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert HTML to XML in Documaster; use the document-model engine"
+   },
+   "sldc": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 956,
+    "verified": true
+   },
+   "sldc@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert HTML to SLDC in Documaster; use the document-model engine"
+   },
+   "png": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from html to png is not available"
+   },
+   "png@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   },
+   "jpeg": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from html to jpeg is not available"
+   },
+   "jpeg@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   }
+  },
+  "xml": {
+   "pdf": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 21028,
+    "verified": true
+   },
+   "pdf@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert XML to PDF in Documaster; use the document-model engine"
+   },
+   "docx": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 37817,
+    "verified": true
+   },
+   "docx@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert XML to Word (DOCX) in Documaster; use the document-model engine"
+   },
+   "odt": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 3051,
+    "verified": true
+   },
+   "odt@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert XML to OpenDocument Text in Documaster; use the document-model engine"
+   },
+   "rtf": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 2328,
+    "verified": true
+   },
+   "rtf@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert XML to Rich Text in Documaster; use the document-model engine"
+   },
+   "html": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 1588,
+    "verified": true
+   },
+   "html@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert XML to HTML in Documaster; use the document-model engine"
+   },
+   "md": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 29,
+    "verified": true
+   },
+   "md@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert XML to Markdown in Documaster; use the document-model engine"
+   },
+   "txt": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 29,
+    "verified": true
+   },
+   "txt@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert XML to Plain text in Documaster; use the document-model engine"
+   },
+   "xml": {
+    "result": "refused",
+    "detail": "same_format: The file is already XML. Choose another target format."
+   },
+   "xml@lo": {
+    "result": "refused",
+    "detail": "same_format: The file is already XML. Choose another target format."
+   },
+   "sldc": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 1046,
+    "verified": true
+   },
+   "sldc@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert XML to SLDC in Documaster; use the document-model engine"
+   },
+   "png": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from xml to png is not available"
+   },
+   "png@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   },
+   "jpeg": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from xml to jpeg is not available"
+   },
+   "jpeg@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   }
+  },
+  "csv": {
+   "pdf": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 40460,
+    "verified": true
+   },
+   "pdf@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert CSV to PDF in Documaster; use the document-model engine"
+   },
+   "docx": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 37988,
+    "verified": true
+   },
+   "docx@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert CSV to Word (DOCX) in Documaster; use the document-model engine"
+   },
+   "odt": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 3181,
+    "verified": true
+   },
+   "odt@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert CSV to OpenDocument Text in Documaster; use the document-model engine"
+   },
+   "rtf": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 3025,
+    "verified": true
+   },
+   "rtf@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert CSV to Rich Text in Documaster; use the document-model engine"
+   },
+   "html": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 1669,
+    "verified": true
+   },
+   "html@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert CSV to HTML in Documaster; use the document-model engine"
+   },
+   "md": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 48,
+    "verified": true
+   },
+   "md@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert CSV to Markdown in Documaster; use the document-model engine"
+   },
+   "txt": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 22,
+    "verified": true
+   },
+   "txt@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert CSV to Plain text in Documaster; use the document-model engine"
+   },
+   "xml": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 371,
+    "verified": true
+   },
+   "xml@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert CSV to XML in Documaster; use the document-model engine"
+   },
+   "sldc": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 964,
+    "verified": true
+   },
+   "sldc@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert CSV to SLDC in Documaster; use the document-model engine"
+   },
+   "png": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from csv to png is not available"
+   },
+   "png@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   },
+   "jpeg": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from csv to jpeg is not available"
+   },
+   "jpeg@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   }
+  },
+  "png": {
+   "pdf": {
+    "result": "ok-nomark",
+    "engine": "raster",
+    "bytes": 2348,
+    "verified": true
+   },
+   "pdf@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   },
+   "docx": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from png to docx is not available"
+   },
+   "docx@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   },
+   "odt": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from png to odt is not available"
+   },
+   "odt@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   },
+   "rtf": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from png to rtf is not available"
+   },
+   "rtf@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   },
+   "html": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from png to html is not available"
+   },
+   "html@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   },
+   "md": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from png to md is not available"
+   },
+   "md@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   },
+   "txt": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from png to txt is not available"
+   },
+   "txt@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   },
+   "xml": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from png to xml is not available"
+   },
+   "xml@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   },
+   "sldc": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from png to sldc is not available"
+   },
+   "sldc@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   },
+   "png": {
+    "result": "refused",
+    "detail": "same_format: The file is already PNG image. Choose another target format."
+   },
+   "png@lo": {
+    "result": "refused",
+    "detail": "same_format: The file is already PNG image. Choose another target format."
+   },
+   "jpeg": {
+    "result": "ok-nomark",
+    "engine": "raster",
+    "bytes": 1434,
+    "verified": true
+   },
+   "jpeg@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   }
+  },
+  "jpeg": {
+   "pdf": {
+    "result": "ok-nomark",
+    "engine": "raster",
+    "bytes": 3292,
+    "verified": true
+   },
+   "pdf@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   },
+   "docx": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from jpeg to docx is not available"
+   },
+   "docx@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   },
+   "odt": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from jpeg to odt is not available"
+   },
+   "odt@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   },
+   "rtf": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from jpeg to rtf is not available"
+   },
+   "rtf@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   },
+   "html": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from jpeg to html is not available"
+   },
+   "html@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   },
+   "md": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from jpeg to md is not available"
+   },
+   "md@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   },
+   "txt": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from jpeg to txt is not available"
+   },
+   "txt@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   },
+   "xml": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from jpeg to xml is not available"
+   },
+   "xml@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   },
+   "sldc": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from jpeg to sldc is not available"
+   },
+   "sldc@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   },
+   "png": {
+    "result": "ok-nomark",
+    "engine": "raster",
+    "bytes": 2266,
+    "verified": true
+   },
+   "png@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   },
+   "jpeg": {
+    "result": "refused",
+    "detail": "same_format: The file is already JPEG image. Choose another target format."
+   },
+   "jpeg@lo": {
+    "result": "refused",
+    "detail": "same_format: The file is already JPEG image. Choose another target format."
+   }
+  },
+  "odt": {
+   "pdf": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 40581,
+    "verified": true
+   },
+   "pdf@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 14055,
+    "verified": true
+   },
+   "docx": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 37874,
+    "verified": true
+   },
+   "docx@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 8285,
+    "verified": true
+   },
+   "odt": {
+    "result": "refused",
+    "detail": "same_format: The file is already OpenDocument Text. Choose another target format."
+   },
+   "odt@lo": {
+    "result": "refused",
+    "detail": "same_format: The file is already OpenDocument Text. Choose another target format."
+   },
+   "rtf": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 2455,
+    "verified": true
+   },
+   "rtf@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 18356,
+    "verified": true
+   },
+   "html": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 1667,
+    "verified": true
+   },
+   "html@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 1429,
+    "verified": true
+   },
+   "md": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 73,
+    "verified": true
+   },
+   "md@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert OpenDocument Text to Markdown in Documaster; use the document-model engin"
+   },
+   "txt": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 71,
+    "verified": true
+   },
+   "txt@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 72,
+    "verified": true
+   },
+   "xml": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 325,
+    "verified": true
+   },
+   "xml@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert OpenDocument Text to XML in Documaster; use the document-model engine"
+   },
+   "sldc": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 987,
+    "verified": true
+   },
+   "sldc@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert OpenDocument Text to SLDC in Documaster; use the document-model engine"
+   },
+   "png": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from odt to png is not available"
+   },
+   "png@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   },
+   "jpeg": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from odt to jpeg is not available"
+   },
+   "jpeg@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   }
+  },
+  "rtf": {
+   "pdf": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 40544,
+    "verified": true
+   },
+   "pdf@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 13872,
+    "verified": true
+   },
+   "docx": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 37816,
+    "verified": true
+   },
+   "docx@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 6863,
+    "verified": true
+   },
+   "odt": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 3188,
+    "verified": true
+   },
+   "odt@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 13864,
+    "verified": true
+   },
+   "rtf": {
+    "result": "refused",
+    "detail": "same_format: The file is already Rich Text. Choose another target format."
+   },
+   "rtf@lo": {
+    "result": "refused",
+    "detail": "same_format: The file is already Rich Text. Choose another target format."
+   },
+   "html": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 1727,
+    "verified": true
+   },
+   "html@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 1821,
+    "verified": true
+   },
+   "md": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 77,
+    "verified": true
+   },
+   "md@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert Rich Text to Markdown in Documaster; use the document-model engine"
+   },
+   "txt": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 71,
+    "verified": true
+   },
+   "txt@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 72,
+    "verified": true
+   },
+   "xml": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 374,
+    "verified": true
+   },
+   "xml@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert Rich Text to XML in Documaster; use the document-model engine"
+   },
+   "sldc": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 1266,
+    "verified": true
+   },
+   "sldc@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert Rich Text to SLDC in Documaster; use the document-model engine"
+   },
+   "png": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from rtf to png is not available"
+   },
+   "png@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   },
+   "jpeg": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from rtf to jpeg is not available"
+   },
+   "jpeg@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   }
+  },
+  "doc": {
+   "pdf": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 40549,
+    "verified": true
+   },
+   "pdf@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 14055,
+    "verified": true
+   },
+   "docx": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 37816,
+    "verified": true
+   },
+   "docx@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 8117,
+    "verified": true
+   },
+   "odt": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 3188,
+    "verified": true
+   },
+   "odt@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 13008,
+    "verified": true
+   },
+   "rtf": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 2420,
+    "verified": true
+   },
+   "rtf@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 22778,
+    "verified": true
+   },
+   "html": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 1727,
+    "verified": true
+   },
+   "html@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 1877,
+    "verified": true
+   },
+   "md": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 77,
+    "verified": true
+   },
+   "md@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert Word 97-2003 (DOC) to Markdown in Documaster; use the document-model engi"
+   },
+   "txt": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 71,
+    "verified": true
+   },
+   "txt@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 72,
+    "verified": true
+   },
+   "xml": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 374,
+    "verified": true
+   },
+   "xml@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert Word 97-2003 (DOC) to XML in Documaster; use the document-model engine"
+   },
+   "sldc": {
+    "result": "ok",
+    "engine": "model",
+    "bytes": 1277,
+    "verified": true
+   },
+   "sldc@lo": {
+    "result": "refused",
+    "detail": "unsupported: LibreOffice cannot convert Word 97-2003 (DOC) to SLDC in Documaster; use the document-model engine"
+   },
+   "png": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from doc to png is not available"
+   },
+   "png@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   },
+   "jpeg": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from doc to jpeg is not available"
+   },
+   "jpeg@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   }
+  },
+  "xlsx": {
+   "pdf": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 6000,
+    "verified": true
+   },
+   "pdf@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 6000,
+    "verified": true
+   },
+   "docx": {
+    "result": "refused",
+    "detail": "unsupported: Excel (XLSX) can only be converted to PDF"
+   },
+   "docx@lo": {
+    "result": "refused",
+    "detail": "unsupported: Excel (XLSX) can only be converted to PDF"
+   },
+   "odt": {
+    "result": "refused",
+    "detail": "unsupported: Excel (XLSX) can only be converted to PDF"
+   },
+   "odt@lo": {
+    "result": "refused",
+    "detail": "unsupported: Excel (XLSX) can only be converted to PDF"
+   },
+   "rtf": {
+    "result": "refused",
+    "detail": "unsupported: Excel (XLSX) can only be converted to PDF"
+   },
+   "rtf@lo": {
+    "result": "refused",
+    "detail": "unsupported: Excel (XLSX) can only be converted to PDF"
+   },
+   "html": {
+    "result": "refused",
+    "detail": "unsupported: Excel (XLSX) can only be converted to PDF"
+   },
+   "html@lo": {
+    "result": "refused",
+    "detail": "unsupported: Excel (XLSX) can only be converted to PDF"
+   },
+   "md": {
+    "result": "refused",
+    "detail": "unsupported: Excel (XLSX) can only be converted to PDF"
+   },
+   "md@lo": {
+    "result": "refused",
+    "detail": "unsupported: Excel (XLSX) can only be converted to PDF"
+   },
+   "txt": {
+    "result": "refused",
+    "detail": "unsupported: Excel (XLSX) can only be converted to PDF"
+   },
+   "txt@lo": {
+    "result": "refused",
+    "detail": "unsupported: Excel (XLSX) can only be converted to PDF"
+   },
+   "xml": {
+    "result": "refused",
+    "detail": "unsupported: Excel (XLSX) can only be converted to PDF"
+   },
+   "xml@lo": {
+    "result": "refused",
+    "detail": "unsupported: Excel (XLSX) can only be converted to PDF"
+   },
+   "sldc": {
+    "result": "refused",
+    "detail": "unsupported: Excel (XLSX) can only be converted to PDF"
+   },
+   "sldc@lo": {
+    "result": "refused",
+    "detail": "unsupported: Excel (XLSX) can only be converted to PDF"
+   },
+   "png": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from xlsx to png is not available"
+   },
+   "png@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   },
+   "jpeg": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from xlsx to jpeg is not available"
+   },
+   "jpeg@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   }
+  },
+  "pptx": {
+   "pdf": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 6331,
+    "verified": true
+   },
+   "pdf@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 6331,
+    "verified": true
+   },
+   "docx": {
+    "result": "refused",
+    "detail": "unsupported: PowerPoint (PPTX) can only be converted to PDF"
+   },
+   "docx@lo": {
+    "result": "refused",
+    "detail": "unsupported: PowerPoint (PPTX) can only be converted to PDF"
+   },
+   "odt": {
+    "result": "refused",
+    "detail": "unsupported: PowerPoint (PPTX) can only be converted to PDF"
+   },
+   "odt@lo": {
+    "result": "refused",
+    "detail": "unsupported: PowerPoint (PPTX) can only be converted to PDF"
+   },
+   "rtf": {
+    "result": "refused",
+    "detail": "unsupported: PowerPoint (PPTX) can only be converted to PDF"
+   },
+   "rtf@lo": {
+    "result": "refused",
+    "detail": "unsupported: PowerPoint (PPTX) can only be converted to PDF"
+   },
+   "html": {
+    "result": "refused",
+    "detail": "unsupported: PowerPoint (PPTX) can only be converted to PDF"
+   },
+   "html@lo": {
+    "result": "refused",
+    "detail": "unsupported: PowerPoint (PPTX) can only be converted to PDF"
+   },
+   "md": {
+    "result": "refused",
+    "detail": "unsupported: PowerPoint (PPTX) can only be converted to PDF"
+   },
+   "md@lo": {
+    "result": "refused",
+    "detail": "unsupported: PowerPoint (PPTX) can only be converted to PDF"
+   },
+   "txt": {
+    "result": "refused",
+    "detail": "unsupported: PowerPoint (PPTX) can only be converted to PDF"
+   },
+   "txt@lo": {
+    "result": "refused",
+    "detail": "unsupported: PowerPoint (PPTX) can only be converted to PDF"
+   },
+   "xml": {
+    "result": "refused",
+    "detail": "unsupported: PowerPoint (PPTX) can only be converted to PDF"
+   },
+   "xml@lo": {
+    "result": "refused",
+    "detail": "unsupported: PowerPoint (PPTX) can only be converted to PDF"
+   },
+   "sldc": {
+    "result": "refused",
+    "detail": "unsupported: PowerPoint (PPTX) can only be converted to PDF"
+   },
+   "sldc@lo": {
+    "result": "refused",
+    "detail": "unsupported: PowerPoint (PPTX) can only be converted to PDF"
+   },
+   "png": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from pptx to png is not available"
+   },
+   "png@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   },
+   "jpeg": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from pptx to jpeg is not available"
+   },
+   "jpeg@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   }
+  },
+  "odp": {
+   "pdf": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 6331,
+    "verified": true
+   },
+   "pdf@lo": {
+    "result": "ok",
+    "engine": "libreoffice",
+    "bytes": 6331,
+    "verified": true
+   },
+   "docx": {
+    "result": "refused",
+    "detail": "unsupported: OpenDocument Presentation can only be converted to PDF"
+   },
+   "docx@lo": {
+    "result": "refused",
+    "detail": "unsupported: OpenDocument Presentation can only be converted to PDF"
+   },
+   "odt": {
+    "result": "refused",
+    "detail": "unsupported: OpenDocument Presentation can only be converted to PDF"
+   },
+   "odt@lo": {
+    "result": "refused",
+    "detail": "unsupported: OpenDocument Presentation can only be converted to PDF"
+   },
+   "rtf": {
+    "result": "refused",
+    "detail": "unsupported: OpenDocument Presentation can only be converted to PDF"
+   },
+   "rtf@lo": {
+    "result": "refused",
+    "detail": "unsupported: OpenDocument Presentation can only be converted to PDF"
+   },
+   "html": {
+    "result": "refused",
+    "detail": "unsupported: OpenDocument Presentation can only be converted to PDF"
+   },
+   "html@lo": {
+    "result": "refused",
+    "detail": "unsupported: OpenDocument Presentation can only be converted to PDF"
+   },
+   "md": {
+    "result": "refused",
+    "detail": "unsupported: OpenDocument Presentation can only be converted to PDF"
+   },
+   "md@lo": {
+    "result": "refused",
+    "detail": "unsupported: OpenDocument Presentation can only be converted to PDF"
+   },
+   "txt": {
+    "result": "refused",
+    "detail": "unsupported: OpenDocument Presentation can only be converted to PDF"
+   },
+   "txt@lo": {
+    "result": "refused",
+    "detail": "unsupported: OpenDocument Presentation can only be converted to PDF"
+   },
+   "xml": {
+    "result": "refused",
+    "detail": "unsupported: OpenDocument Presentation can only be converted to PDF"
+   },
+   "xml@lo": {
+    "result": "refused",
+    "detail": "unsupported: OpenDocument Presentation can only be converted to PDF"
+   },
+   "sldc": {
+    "result": "refused",
+    "detail": "unsupported: OpenDocument Presentation can only be converted to PDF"
+   },
+   "sldc@lo": {
+    "result": "refused",
+    "detail": "unsupported: OpenDocument Presentation can only be converted to PDF"
+   },
+   "png": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from odp to png is not available"
+   },
+   "png@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   },
+   "jpeg": {
+    "result": "refused",
+    "detail": "unsupported: Image conversion from odp to jpeg is not available"
+   },
+   "jpeg@lo": {
+    "result": "refused",
+    "detail": "unsupported: Image conversions use the Documaster raster engine, not LibreOffice"
+   }
+  }
+ }
+}
