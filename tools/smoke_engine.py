@@ -43,6 +43,8 @@ class SmokeFailure(RuntimeError):
 def engine_command(bundle: Path | None, port: int) -> tuple[list[str], Path, dict[str, str]]:
     """(command, working folder, extra environment) that start the engine with the shell's arguments."""
     common = ["--no-browser", "--ready-line", "--exit-on-stdin-close", "--port-fallback", "--port", str(port)]
+    if bundle is not None:
+        bundle = bundle.resolve()      # the engine runs with the bundle as its working folder: a relative path would be applied twice
     if bundle is None:
         return [sys.executable, "-m", "slai", *common], APP, {}
     python = bundle / "python" / ("python.exe" if os.name == "nt" else "bin/python3")

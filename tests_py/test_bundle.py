@@ -19,6 +19,7 @@ APP_ROOT = Path(__file__).resolve().parent.parent      # no import of ``support`
 
 sys.path.insert(0, str(APP_ROOT / "tools"))
 import build_bundle as BB  # noqa: E402
+import smoke_engine as SM  # noqa: E402
 import stage_slai as SS  # noqa: E402
 
 
@@ -453,6 +454,25 @@ class BuildBundleTests(unittest.TestCase):
             self.skipTest("this is the platform the build is for")
         with self.assertRaisesRegex(BB.BuildError, "build on Windows"):
             BB.build(self.args(allow_non_windows=False), FakePip())
+
+
+class SmokeCommandTests(unittest.TestCase):
+    def test_a_relative_bundle_path_gives_absolute_paths(self):
+        """Found on the first real Windows build: ``--bundle src-tauri\\engine`` was applied again inside the bundle as its working folder."""
+        tmp = Path(tempfile.mkdtemp(prefix="dm-smoke-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        bundle = tmp / "src-tauri" / "engine"
+        write(bundle, {"bundle.json": "{}", "app/run_documaster.py": "", "python/python.exe": "", "python/bin/python3": ""})
+        import os
+        here = os.getcwd()
+        self.addCleanup(os.chdir, here)
+        os.chdir(tmp)
+        command, cwd, _ = SM.engine_command(Path("src-tauri/engine"), 0)
+        self.assertTrue(Path(command[0]).is_absolute() and Path(command[1]).is_absolute(), command[:2])
+        self.assertTrue(Path(command[1]).is_file(), command[1])
+        self.assertTrue(cwd.is_absolute())
+        with self.assertRaisesRegex(SM.SmokeFailure, "bundle is incomplete"):
+            SM.engine_command(Path("nowhere"), 0)
 
 
 class VersionsAgreeTests(unittest.TestCase):
