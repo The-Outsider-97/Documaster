@@ -44,6 +44,10 @@ def main(argv: list[str] | None = None) -> int:
     modes.add_argument("--dev", action="store_true", help="development start: rebuild the web client first when it is missing or older than its sources")
     args = p.parse_args(argv)
     logging.getLogger("pypdf").setLevel(logging.ERROR)       # damaged-but-readable PDFs otherwise print a warning per object
+    trace = os.environ.get("DOCUMASTER_TRACE_AFTER", "")
+    if trace.isdigit() and int(trace) > 0:                   # diagnostics for a hang: every thread's stack goes to stderr every N seconds
+        import faulthandler
+        faulthandler.dump_traceback_later(int(trace), repeat=True, file=sys.stderr)
     if args.ready_line:                                      # the host reads our stdout as UTF-8, whatever the console code page is
         for stream in (sys.stdout, sys.stderr):
             try:

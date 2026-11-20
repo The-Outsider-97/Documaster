@@ -57,7 +57,8 @@ def engine_command(bundle: Path | None, port: int) -> tuple[list[str], Path, dic
 
 
 class Engine:
-    def __init__(self, command: list[str], cwd: Path, extra_env: dict[str, str], clean: bool) -> None:
+    def __init__(self, command: list[str], cwd: Path, extra_env: dict[str, str], clean: bool, verbose: bool = False) -> None:
+        self.verbose = verbose
         # A bundle must work on its own: nothing from the developer's Python or SLAI setup may leak into the check.
         env = {k: v for k, v in os.environ.items() if not clean or k not in ("PYTHONPATH", "PYTHONHOME", "SLAI_ROOT", "SLAI_MODEL_SOURCE")}
         env.update(extra_env)
@@ -87,7 +88,10 @@ class Engine:
     def _pump_err(self) -> None:
         assert self.proc.stderr is not None
         for raw in self.proc.stderr:
-            self.stderr.append(raw.decode("utf-8", "replace").rstrip("\r\n"))
+            line = raw.decode("utf-8", "replace").rstrip("\r\n")
+            self.stderr.append(line)
+            if self.verbose:
+                print("  engine| " + line, flush=True)
 
     def wait_ready(self, timeout: float) -> dict:
         end = time.time() + timeout
@@ -102,8 +106,8 @@ class Engine:
             time.sleep(0.05)
         raise SmokeFailure(f"no DOCUMASTER_READY line within {timeout:.0f} s" + self.tail())
 
-    def tail(self) -> str:
-        text = "\n".join((self.lines + self.stderr)[-15:])
+    def tail(self, count: int = 15) -> str:
+        text = "\n".join((self.lines + self.stderr)[-count:])
         return f"\n--- last output ---\n{text}" if text else ""
 
     def quit(self, timeout: float = 15.0) -> int:
@@ -133,16 +137,19 @@ def request(base: str, path: str, token: str | None = None, timeout: float = 60.
         conn.close()
 
 
-def run(bundle: Path | None, timeout: float, agents_test: bool, port: int, say=print) -> list[str]:
+def run(bundle: Path | None, timeout: float, agents_test: bool, port: int, say=print, agent_timeout: float = 600.0,
+        trace_after: int = 0, verbose: bool = False) -> list[str]:
     """Run the checks; returns the lines of the report. Raises :class:`SmokeFailure` at the first check that fails."""
     command, cwd, extra = engine_command(bundle, port)
+    if trace_after > 0:
+        extra = {**extra, "DOCUMASTER_TRACE_AFTER": str(trace_after)}      # the engine then dumps every thread's stack to stderr every N s
     report: list[str] = []
 
     def ok(text: str) -> None:
         report.append(f"[ok] {text}")
         say(report[-1])
 
-    engine = Engine(command, cwd, extra, clean=bundle is not None)
+    engine = Engine(command, cwd, extra, clean=bundle is not None, verbose=verbose)
     try:
         t0 = time.time()
         ready = engine.wait_ready(timeout)
@@ -174,7 +181,12 @@ def run(bundle: Path | None, timeout: float, agents_test: bool, port: int, say=p
         if agents_test:
             say("asking each SLAI agent for one real answer (the first time this loads torch and the model; it can take minutes) ...")
             t1 = time.time()
-            status, _, body = request(base, "/api/agents?test=1", token, timeout=600)
+            try:
+                status, _, body = request(base, "/api/agents?test=1", token, timeout=agent_timeout)
+            except OSError as exc:      # includes the timeout: say where the engine was, not just that it was silent
+                hint = "" if trace_after else "\nRun again with --trace-after 60 to see what every thread is doing."
+                raise SmokeFailure(f"no answer from the agents within {agent_timeout:.0f} s ({exc.__class__.__name__})" + hint
+                                   + engine.tail(60)) from None
             if status != 200:
                 raise SmokeFailure(f"/api/agents?test=1 answered {status}: {body[:300]!r}")
             agents = json.loads(body)["data"]["agents"]
@@ -211,9 +223,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--timeout", type=float, default=150.0, help="seconds to wait for the READY line (default 150, the shell's limit)")
     ap.add_argument("--agents-test", action="store_true", help="also make one real call to each SLAI agent (needs the SLAI agents and torch)")
     ap.add_argument("--port", type=int, default=0, help="preferred port (default: any free one)")
+    ap.add_argument("--agent-timeout", type=float, default=600.0, help="seconds to wait for the agents' answers (default 600)")
+    ap.add_argument("--trace-after", type=int, default=0, metavar="N",
+                    help="diagnostics: the engine prints every thread's stack to its error stream every N seconds, so a hang shows where it is")
+    ap.add_argument("--verbose", action="store_true", help="show the engine's error stream live")
     args = ap.parse_args(argv)
     try:
-        run(args.bundle, args.timeout, args.agents_test, args.port)
+        run(args.bundle, args.timeout, args.agents_test, args.port, agent_timeout=args.agent_timeout,
+            trace_after=args.trace_after, verbose=args.verbose)
     except SmokeFailure as exc:
         print(f"[FAIL] {exc}", file=sys.stderr)
         return 1

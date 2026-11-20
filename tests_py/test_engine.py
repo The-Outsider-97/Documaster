@@ -272,6 +272,18 @@ class EngineProcessTests(unittest.TestCase):
         with self.assertRaises(OSError):
             socket.create_connection(("127.0.0.1", engine.ready["port"]), timeout=2)
 
+    def test_trace_option_dumps_every_threads_stack_to_stderr(self):
+        """DOCUMASTER_TRACE_AFTER is how a hang in a real bundle is located (smoke_engine.py --trace-after)."""
+        engine = Engine(self, "--port", "0", env={"DOCUMASTER_TRACE_AFTER": "1"})
+        engine.wait_for("ready")
+        self.assertIsNotNone(engine.ready, engine.lines)
+        time.sleep(2.5)
+        engine.close_stdin()
+        self.assertEqual(engine.proc.wait(15), 0)
+        err = engine.proc.stderr.read().decode("utf-8", "replace")
+        self.assertIn("most recent call first", err)
+        self.assertIn("serve_forever", err, "the server thread's stack is in the dump")
+
     def test_taken_port_falls_back_only_when_asked(self):
         with socket.socket() as busy:
             busy.bind(("127.0.0.1", 0))
